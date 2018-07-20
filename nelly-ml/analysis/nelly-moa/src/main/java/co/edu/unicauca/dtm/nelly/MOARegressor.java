@@ -17,8 +17,29 @@
 package co.edu.unicauca.dtm.nelly;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+
+import com.yahoo.labs.samoa.instances.Instance;
+import com.yahoo.labs.samoa.instances.InstancesHeader;
+
+import moa.classifiers.Classifier;
+import moa.classifiers.functions.AdaGrad;
+import moa.classifiers.functions.SGD;
+import moa.classifiers.meta.RandomRules;
+import moa.classifiers.rules.AMRulesRegressor;
+import moa.classifiers.rules.functions.AdaptiveNodePredictor;
+import moa.classifiers.rules.functions.FadingTargetMean;
+import moa.classifiers.rules.functions.LowPassFilteredLearner;
+import moa.classifiers.rules.functions.Perceptron;
+import moa.classifiers.rules.functions.TargetMean;
+import moa.classifiers.rules.meta.RandomAMRules;
+import moa.classifiers.trees.FIMTDD;
+import moa.classifiers.trees.ORTO;
+import moa.streams.ArffFileStream;
 
 /**
  * 
@@ -41,12 +62,26 @@ public class MOARegressor {
 		options.put("--arff", 1);
 		options.put("--out", 2);
 		options.put("--learner", 3);
-		// Add column index to predict
-		// Add column index to recognize if instance is for training or prediction
-		// Add threshold for training
+		options.put("--idxClass", 4);
+		options.put("--idxTrain", 5);
+		options.put("--thrTrain", 6);
 	}
 
-	public MOARegressor() {
+	private static final Map<String, Integer> learnerOptions;
+	static {
+		learnerOptions = new HashMap<String, Integer>();
+		learnerOptions.put("adagrad", 0);
+		learnerOptions.put("sgd", 1);
+		learnerOptions.put("randomrules", 2);
+		learnerOptions.put("amrules", 3);
+		learnerOptions.put("adaptivenode", 4);
+		learnerOptions.put("fadingtarget", 5);
+		learnerOptions.put("lowpassfiler", 6);
+		learnerOptions.put("perceptron", 7);
+		learnerOptions.put("targetmean", 8);
+		learnerOptions.put("randomamrules", 9);
+		learnerOptions.put("fimtdd", 10);
+		learnerOptions.put("orto", 11);
 	}
 
 	/**
@@ -58,6 +93,10 @@ public class MOARegressor {
 		String outPath = System.getProperty("user.home") + File.separator + "out.csv";
 		//
 		String sLearner = "fimtdd";
+		//
+		String sIndexClass = "1";
+		String sIndexTrain = "-1";
+		String sThresholdTrain = "0";
 		// Get parameters from arguments
 		for (int i = 0; i < args.length; i++) {
 			// Check that given option exists
@@ -85,16 +124,192 @@ public class MOARegressor {
 			case 3:
 				sLearner = args[i];
 				break;
+			case 4:
+				sIndexClass = args[i];
+				break;
+			case 5:
+				sIndexTrain = args[i];
+				break;
+			case 6:
+				sThresholdTrain = args[i];
+				break;
 			default:
 				System.err.println("Internal error. Option " + option + " is not implemented");
 				System.exit(1);
 				break;
 			}
 		}
+		// Check if ARFF path exists
+		File arffFile = new File(arffPath);
+		if (!arffFile.exists()) {
+			System.out.println("PCAP path '" + arffPath + "' does not exist");
+			System.exit(1);
+		}
+		// Get learning algorithm
+		Classifier learner = null;
+		// Check that given learner exists
+		int learnerOption = -1;
+		if (learnerOptions.containsKey(sLearner)) {
+			learnerOption = learnerOptions.get(sLearner);
+		} else {
+			System.out.println("Learner " + sLearner + " does not exist");
+			printHelp();
+			System.exit(1);
+		}
+		// Set learner corresponding to option
+		switch (learnerOption) {
+		case 0:
+			learner = new AdaGrad();
+			break;
+		case 1:
+			learner = new SGD();
+			break;
+		case 2:
+			learner = new RandomRules();
+			break;
+		case 3:
+			learner = new AMRulesRegressor();
+			break;
+		case 4:
+			learner = new AdaptiveNodePredictor();
+			break;
+		case 5:
+			learner = new FadingTargetMean();
+			break;
+		case 6:
+			learner = new LowPassFilteredLearner();
+			break;
+		case 7:
+			learner = new Perceptron();
+			break;
+		case 8:
+			learner = new TargetMean();
+			break;
+		case 9:
+			learner = new RandomAMRules();
+			break;
+		case 10:
+			learner = new FIMTDD();
+			break;
+		case 11:
+			learner = new ORTO();
+			break;
+		default:
+			System.err.println("Internal error. Learner " + learnerOption + " is not implemented");
+			System.exit(1);
+			break;
+		}
+		// Parse index of the column with the values to predict
+		int indexClass;
+		try {
+			indexClass = Integer.parseInt(sIndexClass);
+		} catch (Exception e) {
+			indexClass = 1;
+			System.out.println("Error parsing index class '" + sIndexClass
+					+ "' to integer. Using by default the first column as values to predict.");
+		}
+		// Parse index of the column that identifies instances for training
+		int indexTrain;
+		try {
+			indexTrain = Integer.parseInt(sIndexTrain);
+		} catch (Exception e) {
+			indexTrain = -1;
+			System.out.println("Error parsing index train '" + sIndexTrain
+					+ "' to integer. Using by default the last column as identifier of instances for training.");
+		}
+		// Parse threshold that identifies instances for training
+		int thresholdTrain;
+		try {
+			thresholdTrain = Integer.parseInt(sThresholdTrain);
+		} catch (Exception e) {
+			thresholdTrain = 0;
+			System.out.println("Error parsing threshold train '" + sThresholdTrain
+					+ "' to integer. Using by default 0 as threshold of instances for training.");
+		}
+		// Read ARFF file as a stream
+		ArffFileStream stream = new ArffFileStream(arffPath, indexClass);
+		stream.prepareForUse();
+		//
+		InstancesHeader learnerHeader = stream.getHeader();
+		if (indexTrain == -1) {
+			indexTrain = learnerHeader.numAttributes();
+		}
+		learnerHeader.deleteAttributeAt(indexTrain);
+		learner.prepareForUse();
+		learner.setModelContext(learnerHeader);
+		// Evaluate learner
+		double sumOfErrors = 0;
+		double sumOfSquareErrors = 0;
+		int countTrainSamples = 0;
+		int countTestSamples = 0;
+		StringBuilder result = new StringBuilder();
+		for (int i = 0; i < 100; i++) {
+//		while (stream.hasMoreInstances()) {
+			// Obtain instance
+			Instance instance = stream.nextInstance().getData();
+			// Check if the instance is for prediction or training
+			if (instance.value(indexTrain - 1) == 0) {
+				// Remove column that indicates training
+				instance.deleteAttributeAt(indexTrain - 1);
+//				// Predict
+				double predictedValue = learner.getPredictionForInstance(instance).getVote(0, 0);
+//				double predictedValue = Math.abs(learner.getPredictionForInstance(instance).getVote(0, 0));
+//				// Get real value
+				double actualValue = instance.classValue();
+//				// Compute error between predicted and actual value
+//				double error = Math.abs(predictedValue - actualValue);
+//				// Add error to the sum
+//				sumOfErrors += error;
+//				sumOfSquareErrors += Math.pow(error, 2);
+//				// Count test samples
+				countTestSamples++;
+//				// Compute MAE
+//				double mae = sumOfErrors / countTestSamples;
+//				double rmse = Math.sqrt(sumOfSquareErrors / countTestSamples);
+//				// Generate report
+				result.append(countTestSamples).append(",");
+				result.append(countTrainSamples).append(",");
+				result.append(predictedValue).append(",");
+				result.append(actualValue).append(",");
+//				result.append(error).append(",");
+//				result.append(mae).append(",");
+//				result.append(rmse).append("\n");
+				result.append("\n");
+			} else {
+				// Remove column that indicates training
+				instance.deleteAttributeAt(indexTrain - 1);
+				// Check threshold
+				if (instance.classValue() > thresholdTrain) {
+					learner.trainOnInstance(instance);
+					countTrainSamples++;
+				}
+			}
+		}
+		System.out.println(result.toString());
+
+		// // Check if output path exists
+		// File outFile = new File(outPath);
+		// if (outFile.exists()) {
+		// outFile.delete();
+		// }
+		// // Create CSV file writer
+		// FileOutputStream output;
+		// try {
+		// output = new FileOutputStream(outFile);
+		// // output.write(report.toString().getBytes());
+		// output.close();
+		// } catch (FileNotFoundException e1) {
+		// System.err.println("Internal error. File '" + outFile.getAbsolutePath() + "'
+		// does not exist");
+		// } catch (IOException e) {
+		// System.err.println("Internal error. Exception thrown when writing on the file
+		// '"
+		// + outFile.getAbsolutePath() + "'");
+		// }
 	}
-	
+
 	public void run() {
-		
+
 	}
 
 	/**
