@@ -92,18 +92,17 @@ public class MOARegressor {
 		String arffPath = System.getProperty("user.home") + File.separator + "data.arff";
 		String outPath = System.getProperty("user.home") + File.separator + "out.csv";
 		//
-		String sLearner = "fimtdd";
+		String learnerName = "fimtdd";
 		//
-		String sIndexClass = "-1";
-		String sIndexTrain = "-1";
-		String sThresholdTrain = "0";
+		int indexClass = -1;
+		int indexTrain = -1;
+		int thresholdTrain = 0;
 		// Get parameters from arguments
 		for (int i = 0; i < args.length; i++) {
 			// Check that given option exists
 			int option = 0;
 			if (options.containsKey(args[i])) {
 				option = options.get(args[i]);
-				i++;
 			} else {
 				System.out.println("Option " + args[i] + " does not exist");
 				printHelp();
@@ -111,28 +110,63 @@ public class MOARegressor {
 			}
 			// Set parameter corresponding to option
 			switch (option) {
+			// Help
 			case 0:
 				printHelp();
-				System.exit(1);
+				System.exit(0);
 				break;
+			// ARFF
 			case 1:
+				i++;
 				arffPath = args[i];
 				break;
+			// OUTPUT
 			case 2:
+				i++;
 				outPath = args[i];
 				break;
+			// LEARNER
 			case 3:
-				sLearner = args[i];
+				i++;
+				learnerName = args[i];
 				break;
+			// INDEX CLASS
 			case 4:
-				sIndexClass = args[i];
+				i++;
+				// Parse index of the column with the values to predict
+				try {
+					indexClass = Integer.parseInt(args[i]);
+				} catch (Exception e) {
+					indexClass = -1;
+					System.out.println("Error parsing index class '" + args[i]
+							+ "' to integer. Using by default the second-last column as values to predict.");
+				}
 				break;
+			// INDEX TRAIN
 			case 5:
-				sIndexTrain = args[i];
+				i++;
+				// Parse index of the column that identifies instances for training
+				try {
+					indexTrain = Integer.parseInt(args[i]);
+				} catch (Exception e) {
+					indexTrain = -1;
+					System.out.println("Error parsing index train '" + args[i]
+							+ "' to integer. Using by default the last column as identifier of instances for training.");
+				}
 				break;
+			// THRESHOLD TRAIN
 			case 6:
-				sThresholdTrain = args[i];
+				i++;
+				// Parse threshold that identifies instances for training
+				try {
+					thresholdTrain = Integer.parseInt(args[i]);
+				} catch (Exception e) {
+					thresholdTrain = 0;
+					System.out.println("Error parsing threshold train '" + args[i]
+							+ "' to integer. Using by default 0 as threshold of instances for training.");
+				}
 				break;
+			// ERROR
 			default:
 				System.err.println("Internal error. Option " + option + " is not implemented");
 				System.exit(1);
@@ -140,102 +174,88 @@ public class MOARegressor {
 			}
 		}
 		// Check if ARFF path exists
-		File arffFile = new File(arffPath);
-		if (!arffFile.exists()) {
-			System.out.println("PCAP path '" + arffPath + "' does not exist");
+		if (!new File(arffPath).exists()) {
+			System.out.println("File path '" + arffPath + "' does not exist");
 			System.exit(1);
 		}
 		// Get learning algorithm
-		Classifier learner = null;
-		// Check that given learner exists
+		Classifier learner = getLearner(learnerName);
+		// Run
+		MOARegressor regressor = new MOARegressor();
+		regressor.run(readStream(arffPath, indexClass), learner, indexTrain, thresholdTrain);
+	}
+	
+	/**
+	 * Prints help
+	 */
+	private static void printHelp() {
+		System.out.println("");
+		System.out.println("=========");
+		System.out.println("NELLY-MOA");
+		System.out.println("=========");
+		System.out.println("Options:");
+		System.out.println("  --help\tDisplay this help");
+		System.out.println("  --arff\tFile that contains ...");
+		System.out.println("  --out\t\tFile to output the results in CSV format");
+		System.out.println("  --learner\tRegressor model ...");
+	}
+
+	/**
+	 * @param learnerName
+	 * @return
+	 */
+	private static Classifier getLearner(String learnerName) {
+		// Check that given learner name exists
 		int learnerOption = -1;
-		if (learnerOptions.containsKey(sLearner)) {
-			learnerOption = learnerOptions.get(sLearner);
+		if (learnerOptions.containsKey(learnerName)) {
+			learnerOption = learnerOptions.get(learnerName);
 		} else {
-			System.out.println("Learner " + sLearner + " does not exist");
+			System.out.println("Learner " + learnerName + " does not exist");
 			printHelp();
 			System.exit(1);
 		}
-		// Set learner corresponding to option
+		// Return corresponding learner
 		switch (learnerOption) {
 		case 0:
-			learner = new AdaGrad();
-			break;
+			return new AdaGrad();
 		case 1:
-			learner = new SGD();
-			break;
+			return new SGD();
 		case 2:
-			learner = new RandomRules();
-			break;
+			return new RandomRules();
 		case 3:
-			learner = new AMRulesRegressor();
-			break;
+			return new AMRulesRegressor();
 		case 4:
 			// Based on Perceptron - same issues
-			learner = new AdaptiveNodePredictor();
-			break;
+			return new AdaptiveNodePredictor();
 		case 5:
-			learner = new FadingTargetMean();
-			break;
+			return new FadingTargetMean();
 		case 6:
-			learner = new LowPassFilteredLearner();
-			break;
+			return new LowPassFilteredLearner();
 		case 7:
 			// Not working with a class index other than the second last due to MOA implementation issues
-			learner = new Perceptron();
-			break;
+			return new Perceptron();
 		case 8:
-			learner = new TargetMean();
-			break;
+			return new TargetMean();
 		case 9:
-			learner = new RandomAMRules();
-			break;
+			return new RandomAMRules();
 		case 10:
-			learner = new FIMTDD();
-			break;
+			return new FIMTDD();
 		case 11:
-			learner = new ORTO();
-			break;
+			return new ORTO();
 		default:
 			System.err.println("Internal error. Learner " + learnerOption + " is not implemented");
 			System.exit(1);
-			break;
 		}
-		// Parse index of the column with the values to predict
-		int indexClass;
-		try {
-			indexClass = Integer.parseInt(sIndexClass);
-		} catch (Exception e) {
-			indexClass = -1;
-			System.out.println("Error parsing index class '" + sIndexClass
-					+ "' to integer. Using by default the second-last column as values to predict.");
-		}
-		// Parse index of the column that identifies instances for training
-		int indexTrain;
-		try {
-			indexTrain = Integer.parseInt(sIndexTrain);
-		} catch (Exception e) {
-			indexTrain = -1;
-			System.out.println("Error parsing index train '" + sIndexTrain
-					+ "' to integer. Using by default the last column as identifier of instances for training.");
-		}
-		// Parse threshold that identifies instances for training
-		int thresholdTrain;
-		try {
-			thresholdTrain = Integer.parseInt(sThresholdTrain);
-		} catch (Exception e) {
-			thresholdTrain = 0;
-			System.out.println("Error parsing threshold train '" + sThresholdTrain
-					+ "' to integer. Using by default 0 as threshold of instances for training.");
-		}
-		// Read ARFF file
-		ArffFileStream stream = new ArffFileStream(arffPath, indexClass);
-		//
-		if (indexClass == -1) {
-			indexClass = stream.getHeader().numAttributes() - 1;
-			stream.classIndexOption.setValue(indexClass);
-			stream.restart();
-		}
+		return null;
+	}
+	
+	/**
+	 * @param stream
+	 * @param learner
+	 * @param indexTrain
+	 * @param thresholdTrain
+	 */
+	private void run(ArffFileStream stream, Classifier learner, int indexTrain, int thresholdTrain) {
 		//
 		InstancesHeader ih = stream.getHeader();
 		if (indexTrain == -1) {
@@ -253,38 +273,39 @@ public class MOARegressor {
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
 		StringBuilder result = new StringBuilder();
-		
+
 		int negatives = 0;
-		
-//		for (int i = 0; i < 1000; i++) {
+
+//		for (int i = 0; i < 0; i++) {
 		while (stream.hasMoreInstances()) {
 			// Obtain instance
 			Instance instance = stream.nextInstance().getData();
 			int train = (int) instance.value(indexTrain);
-			
+
 			// Remove column that indicates training
 			instance.deleteAttributeAt(indexTrain);
 			instance.setDataset(actualHeader);
-			
+
 			// Box-Cox transformation (Cube Root)
-//			System.out.println(instance.toString());
-//			instance.setClassValue(Math.cbrt(instance.classValue()));
-//			System.out.println(instance.toString());
-//			instance.setClassValue(Math.pow(instance.classValue(), 3));
-//			System.out.println(instance.toString());
-			
+			// System.out.println(instance.toString());
+			// instance.setClassValue(Math.cbrt(instance.classValue()));
+			// System.out.println(instance.toString());
+			// instance.setClassValue(Math.pow(instance.classValue(), 3));
+			// System.out.println(instance.toString());
+
 			// Adjusted Log Transformation
 			double minValue = 10000;
-//			instance.setClassValue(Math.log(instance.classValue() + 1 - minValue));
-//			System.out.println(instance.toString());
-//			instance.setClassValue(Math.exp(instance.classValue()) - 1 + minValue);
-//			System.out.println(instance.toString());
-			
+			// instance.setClassValue(Math.log(instance.classValue() + 1 - minValue));
+			// System.out.println(instance.toString());
+			// instance.setClassValue(Math.exp(instance.classValue()) - 1 + minValue);
+			// System.out.println(instance.toString());
+
 			// Check if the instance is for prediction or training
 			if (train == 0) {
-//				// Predict
-//				double predictedValue = learner.getPredictionForInstance(instance).getVote(0, 0);
-//				System.out.println(predictedValue);
+				// // Predict
+				// double predictedValue = learner.getPredictionForInstance(instance).getVote(0,
+				// 0);
+				// System.out.println(predictedValue);
 				System.out.println(learner.getVotesForInstance(instance).length);
 				double predictedValue = 0.0;
 				if (learner.getVotesForInstance(instance).length > 0) {
@@ -292,33 +313,34 @@ public class MOARegressor {
 				}
 				System.out.println(predictedValue);
 				System.out.println("----");
-				
+
 				if (predictedValue < 0) {
 					negatives++;
 				}
-				
-//				double predictedValue = Math.abs(learner.getPredictionForInstance(instance).getVote(0, 0));
-//				// Get real value
+
+				// double predictedValue =
+				// Math.abs(learner.getPredictionForInstance(instance).getVote(0, 0));
+				// // Get real value
 				double actualValue = instance.classValue();
-//				// Compute error between predicted and actual value
-//				double error = Math.abs(predictedValue - actualValue);
-//				// Add error to the sum
-//				sumOfErrors += error;
-//				sumOfSquareErrors += Math.pow(error, 2);
-//				// Count test samples
+				// // Compute error between predicted and actual value
+				// double error = Math.abs(predictedValue - actualValue);
+				// // Add error to the sum
+				// sumOfErrors += error;
+				// sumOfSquareErrors += Math.pow(error, 2);
+				// // Count test samples
 				countTestSamples++;
-//				// Compute MAE
-//				double mae = sumOfErrors / countTestSamples;
-//				double rmse = Math.sqrt(sumOfSquareErrors / countTestSamples);
-//				// Generate report
-//				result.append(countTestSamples).append(",");
-//				result.append(countTrainSamples).append(",");
-//				result.append(predictedValue).append(",");
-//				result.append(actualValue).append(",");
-//				result.append(error).append(",");
-//				result.append(mae).append(",");
-//				result.append(rmse).append("\n");
-//				result.append("\n");
+				// // Compute MAE
+				// double mae = sumOfErrors / countTestSamples;
+				// double rmse = Math.sqrt(sumOfSquareErrors / countTestSamples);
+				// // Generate report
+				// result.append(countTestSamples).append(",");
+				// result.append(countTrainSamples).append(",");
+				// result.append(predictedValue).append(",");
+				// result.append(actualValue).append(",");
+				// result.append(error).append(",");
+				// result.append(mae).append(",");
+				// result.append(rmse).append("\n");
+				// result.append("\n");
 			} else {
 				// Check threshold
 				if (instance.classValue() > thresholdTrain) {
@@ -327,10 +349,10 @@ public class MOARegressor {
 				}
 			}
 		}
-		
+
 		System.out.println("NEGATIVES = " + negatives);
-		
-//		System.out.println(result.toString());
+
+		// System.out.println(result.toString());
 
 		// // Check if output path exists
 		// File outFile = new File(outPath);
@@ -351,25 +373,24 @@ public class MOARegressor {
 		// '"
 		// + outFile.getAbsolutePath() + "'");
 		// }
-	}
-
-	public void run() {
 
 	}
-
+	
 	/**
-	 * Prints help
+	 * @param arffPath
+	 * @param indexClass
+	 * @return
 	 */
-	private static void printHelp() {
-		System.out.println("");
-		System.out.println("=========");
-		System.out.println("NELLY-MOA");
-		System.out.println("=========");
-		System.out.println("Options:");
-		System.out.println("  --help\tDisplay this help");
-		System.out.println("  --arff\tFile that contains ...");
-		System.out.println("  --out\t\tFile to output the results in CSV format");
-		System.out.println("  --learner\tRegressor model ...");
+	private static ArffFileStream readStream(String arffPath, int indexClass) {
+		// Read ARFF file
+		ArffFileStream stream = new ArffFileStream(arffPath, indexClass);
+		//
+		if (indexClass == -1) {
+			indexClass = stream.getHeader().numAttributes() - 1;
+			stream.classIndexOption.setValue(indexClass);
+			stream.restart();
+		}
+		return stream;
 	}
 
 }
