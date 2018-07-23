@@ -94,7 +94,7 @@ public class MOARegressor {
 		//
 		String sLearner = "fimtdd";
 		//
-		String sIndexClass = "1";
+		String sIndexClass = "-1";
 		String sIndexTrain = "-1";
 		String sThresholdTrain = "0";
 		// Get parameters from arguments
@@ -171,6 +171,7 @@ public class MOARegressor {
 			learner = new AMRulesRegressor();
 			break;
 		case 4:
+			// Based on Perceptron - same issues
 			learner = new AdaptiveNodePredictor();
 			break;
 		case 5:
@@ -180,6 +181,7 @@ public class MOARegressor {
 			learner = new LowPassFilteredLearner();
 			break;
 		case 7:
+			// Not working with a class index other than the second last due to MOA implementation issues
 			learner = new Perceptron();
 			break;
 		case 8:
@@ -204,9 +206,9 @@ public class MOARegressor {
 		try {
 			indexClass = Integer.parseInt(sIndexClass);
 		} catch (Exception e) {
-			indexClass = 1;
+			indexClass = -1;
 			System.out.println("Error parsing index class '" + sIndexClass
-					+ "' to integer. Using by default the first column as values to predict.");
+					+ "' to integer. Using by default the second-last column as values to predict.");
 		}
 		// Parse index of the column that identifies instances for training
 		int indexTrain;
@@ -226,33 +228,75 @@ public class MOARegressor {
 			System.out.println("Error parsing threshold train '" + sThresholdTrain
 					+ "' to integer. Using by default 0 as threshold of instances for training.");
 		}
-		// Read ARFF file as a stream
+		// Read ARFF file
 		ArffFileStream stream = new ArffFileStream(arffPath, indexClass);
-		stream.prepareForUse();
 		//
-		InstancesHeader learnerHeader = stream.getHeader();
-		if (indexTrain == -1) {
-			indexTrain = learnerHeader.numAttributes();
+		if (indexClass == -1) {
+			indexClass = stream.getHeader().numAttributes() - 1;
+			stream.classIndexOption.setValue(indexClass);
+			stream.restart();
 		}
-		learnerHeader.deleteAttributeAt(indexTrain);
+		//
+		InstancesHeader ih = stream.getHeader();
+		if (indexTrain == -1) {
+			indexTrain = ih.numAttributes() - 1;
+		}
+		ih.deleteAttributeAt(indexTrain);
+		InstancesHeader actualHeader = new InstancesHeader(ih);
+		//
+		stream.prepareForUse();
 		learner.prepareForUse();
-		learner.setModelContext(learnerHeader);
+		learner.setModelContext(actualHeader);
 		// Evaluate learner
 		double sumOfErrors = 0;
 		double sumOfSquareErrors = 0;
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
 		StringBuilder result = new StringBuilder();
-		for (int i = 0; i < 100; i++) {
-//		while (stream.hasMoreInstances()) {
+		
+		int negatives = 0;
+		
+//		for (int i = 0; i < 1000; i++) {
+		while (stream.hasMoreInstances()) {
 			// Obtain instance
 			Instance instance = stream.nextInstance().getData();
+			int train = (int) instance.value(indexTrain);
+			
+			// Remove column that indicates training
+			instance.deleteAttributeAt(indexTrain);
+			instance.setDataset(actualHeader);
+			
+			// Box-Cox transformation (Cube Root)
+//			System.out.println(instance.toString());
+//			instance.setClassValue(Math.cbrt(instance.classValue()));
+//			System.out.println(instance.toString());
+//			instance.setClassValue(Math.pow(instance.classValue(), 3));
+//			System.out.println(instance.toString());
+			
+			// Adjusted Log Transformation
+			double minValue = 10000;
+//			instance.setClassValue(Math.log(instance.classValue() + 1 - minValue));
+//			System.out.println(instance.toString());
+//			instance.setClassValue(Math.exp(instance.classValue()) - 1 + minValue);
+//			System.out.println(instance.toString());
+			
 			// Check if the instance is for prediction or training
-			if (instance.value(indexTrain - 1) == 0) {
-				// Remove column that indicates training
-				instance.deleteAttributeAt(indexTrain - 1);
+			if (train == 0) {
 //				// Predict
-				double predictedValue = learner.getPredictionForInstance(instance).getVote(0, 0);
+//				double predictedValue = learner.getPredictionForInstance(instance).getVote(0, 0);
+//				System.out.println(predictedValue);
+				System.out.println(learner.getVotesForInstance(instance).length);
+				double predictedValue = 0.0;
+				if (learner.getVotesForInstance(instance).length > 0) {
+					predictedValue = learner.getVotesForInstance(instance)[0];
+				}
+				System.out.println(predictedValue);
+				System.out.println("----");
+				
+				if (predictedValue < 0) {
+					negatives++;
+				}
+				
 //				double predictedValue = Math.abs(learner.getPredictionForInstance(instance).getVote(0, 0));
 //				// Get real value
 				double actualValue = instance.classValue();
@@ -267,17 +311,15 @@ public class MOARegressor {
 //				double mae = sumOfErrors / countTestSamples;
 //				double rmse = Math.sqrt(sumOfSquareErrors / countTestSamples);
 //				// Generate report
-				result.append(countTestSamples).append(",");
-				result.append(countTrainSamples).append(",");
-				result.append(predictedValue).append(",");
-				result.append(actualValue).append(",");
+//				result.append(countTestSamples).append(",");
+//				result.append(countTrainSamples).append(",");
+//				result.append(predictedValue).append(",");
+//				result.append(actualValue).append(",");
 //				result.append(error).append(",");
 //				result.append(mae).append(",");
 //				result.append(rmse).append("\n");
-				result.append("\n");
+//				result.append("\n");
 			} else {
-				// Remove column that indicates training
-				instance.deleteAttributeAt(indexTrain - 1);
 				// Check threshold
 				if (instance.classValue() > thresholdTrain) {
 					learner.trainOnInstance(instance);
@@ -285,7 +327,10 @@ public class MOARegressor {
 				}
 			}
 		}
-		System.out.println(result.toString());
+		
+		System.out.println("NEGATIVES = " + negatives);
+		
+//		System.out.println(result.toString());
 
 		// // Check if output path exists
 		// File outFile = new File(outPath);
