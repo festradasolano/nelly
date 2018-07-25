@@ -39,6 +39,7 @@ import moa.classifiers.rules.functions.TargetMean;
 import moa.classifiers.rules.meta.RandomAMRules;
 import moa.classifiers.trees.FIMTDD;
 import moa.classifiers.trees.ORTO;
+import moa.core.TimingUtils;
 import moa.streams.ArffFileStream;
 
 /**
@@ -55,6 +56,26 @@ public class MOARegressor {
 	/**
 	 * 
 	 */
+	private FileOutputStream output;
+
+	/**
+	 * 
+	 */
+	public MOARegressor() {
+		super();
+	}
+
+	/**
+	 * @param outPath
+	 */
+	public MOARegressor(String outPath) {
+		super();
+		this.createOutputWriter(outPath);
+	}
+
+	/**
+	 * 
+	 */
 	private static final Map<String, Integer> options;
 	static {
 		options = new HashMap<String, Integer>();
@@ -62,11 +83,15 @@ public class MOARegressor {
 		options.put("--arff", 1);
 		options.put("--out", 2);
 		options.put("--learner", 3);
-		options.put("--idxClass", 4);
+		options.put("--idxDV", 4);
 		options.put("--idxTrain", 5);
 		options.put("--thrTrain", 6);
+		options.put("--logMinDV", 7);
 	}
 
+	/**
+	 * 
+	 */
 	private static final Map<String, Integer> learnerOptions;
 	static {
 		learnerOptions = new HashMap<String, Integer>();
@@ -88,31 +113,30 @@ public class MOARegressor {
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		// Define default paths
+		// Define default arguments
 		String arffPath = System.getProperty("user.home") + File.separator + "data.arff";
 		String outPath = System.getProperty("user.home") + File.separator + "out.csv";
-		//
 		String learnerName = "fimtdd";
-		//
-		int indexClass = -1;
+		int indexDV = -1;
 		int indexTrain = -1;
-		int thresholdTrain = 0;
+		double thresholdTrain = 0;
+		double logMinDV = -1;
 		// Get parameters from arguments
 		for (int i = 0; i < args.length; i++) {
 			// Check that given option exists
 			int option = 0;
-			if (options.containsKey(args[i])) {
-				option = options.get(args[i]);
+			if (MOARegressor.options.containsKey(args[i])) {
+				option = MOARegressor.options.get(args[i]);
 			} else {
 				System.out.println("Option " + args[i] + " does not exist");
-				printHelp();
+				MOARegressor.printHelp();
 				System.exit(1);
 			}
 			// Set parameter corresponding to option
 			switch (option) {
 			// Help
 			case 0:
-				printHelp();
+				MOARegressor.printHelp();
 				System.exit(0);
 				break;
 			// ARFF
@@ -130,28 +154,28 @@ public class MOARegressor {
 				i++;
 				learnerName = args[i];
 				break;
-			// INDEX CLASS
+			// INDEX DEPENDENT VARIABLE
 			case 4:
 				i++;
-				// Parse index of the column with the values to predict
+				// Parse index of the column of dependent variables
 				try {
-					indexClass = Integer.parseInt(args[i]);
+					indexDV = Integer.parseInt(args[i]);
 				} catch (Exception e) {
-					indexClass = -1;
-					System.out.println("Error parsing index class '" + args[i]
-							+ "' to integer. Using by default the second-last column as values to predict.");
+					indexDV = -1;
+					System.out.println("Error parsing idxDV '" + args[i]
+							+ "' to integer. Using by default the SECOND-LAST column for dependent variables.");
 				}
 				break;
 			// INDEX TRAIN
 			case 5:
 				i++;
-				// Parse index of the column that identifies instances for training
+				// Parse index of the column that identifies training instances
 				try {
 					indexTrain = Integer.parseInt(args[i]);
 				} catch (Exception e) {
 					indexTrain = -1;
-					System.out.println("Error parsing index train '" + args[i]
-							+ "' to integer. Using by default the last column as identifier of instances for training.");
+					System.out.println("Error parsing idxTrain '" + args[i]
+							+ "' to integer. Using by default the LAST column as identifier of training instances.");
 				}
 				break;
 			// THRESHOLD TRAIN
@@ -159,11 +183,22 @@ public class MOARegressor {
 				i++;
 				// Parse threshold that identifies instances for training
 				try {
-					thresholdTrain = Integer.parseInt(args[i]);
+					thresholdTrain = Double.parseDouble(args[i]);
 				} catch (Exception e) {
 					thresholdTrain = 0;
-					System.out.println("Error parsing threshold train '" + args[i]
-							+ "' to integer. Using by default 0 as threshold of instances for training.");
+					System.out.println("Error parsing thrTrain '" + args[i]
+							+ "' to integer. Using by default 0 as threshold of training instances.");
+				}
+				break;
+			case 7:
+				i++;
+				// Parse minimum value for log transformation
+				try {
+					logMinDV = Double.parseDouble(args[i]);
+				} catch (Exception e) {
+					logMinDV = -1;
+					System.out.println("Error parsing logMinDV '" + args[i]
+							+ "' to integer. By default, log transformation is not carried out.");
 				}
 				break;
 			// ERROR
@@ -179,12 +214,14 @@ public class MOARegressor {
 			System.exit(1);
 		}
 		// Get learning algorithm
-		Classifier learner = getLearner(learnerName);
+		Classifier learner = MOARegressor.getLearner(learnerName);
 		// Run
-		MOARegressor regressor = new MOARegressor();
-		regressor.run(readStream(arffPath, indexClass), learner, indexTrain, thresholdTrain);
+		MOARegressor regressor = new MOARegressor(outPath);
+		regressor.run(MOARegressor.readStream(arffPath, indexDV), learner, indexTrain, thresholdTrain, logMinDV);
+		// Close output writer
+		regressor.closeOutputWriter();
 	}
-	
+
 	/**
 	 * Prints help
 	 */
@@ -207,11 +244,11 @@ public class MOARegressor {
 	private static Classifier getLearner(String learnerName) {
 		// Check that given learner name exists
 		int learnerOption = -1;
-		if (learnerOptions.containsKey(learnerName)) {
-			learnerOption = learnerOptions.get(learnerName);
+		if (MOARegressor.learnerOptions.containsKey(learnerName)) {
+			learnerOption = MOARegressor.learnerOptions.get(learnerName);
 		} else {
 			System.out.println("Learner " + learnerName + " does not exist");
-			printHelp();
+			MOARegressor.printHelp();
 			System.exit(1);
 		}
 		// Return corresponding learner
@@ -232,7 +269,8 @@ public class MOARegressor {
 		case 6:
 			return new LowPassFilteredLearner();
 		case 7:
-			// Not working with a class index other than the second last due to MOA implementation issues
+			// Not working with a class index other than the second last due to MOA
+			// implementation issues
 			return new Perceptron();
 		case 8:
 			return new TargetMean();
@@ -248,149 +286,240 @@ public class MOARegressor {
 		}
 		return null;
 	}
-	
+
+	/**
+	 * @param arffPath
+	 * @param indexDV
+	 * @return
+	 */
+	private static ArffFileStream readStream(String arffPath, int indexDV) {
+		// Read ARFF file
+		ArffFileStream stream = new ArffFileStream(arffPath, indexDV);
+		// Check if default index class (last-second column)
+		if (indexDV == -1) {
+			indexDV = stream.getHeader().numAttributes() - 1;
+			stream.classIndexOption.setValue(indexDV);
+			stream.restart();
+		}
+		// Return stream
+		return stream;
+	}
+
+	/**
+	 * @param path
+	 * @param defaultName
+	 * @return
+	 */
+	private static File getFile(String path, String defaultName) {
+		// Check if path exists
+		File file = new File(path);
+		if (file.exists()) {
+			// Check if path is a directory or a file
+			if (file.isDirectory()) {
+				System.out.println("Path '" + path + "' points to an existing folder");
+				System.out.println("Creating file '" + defaultName + "' in this folder path");
+				file = new File(file.getAbsolutePath() + File.separator + defaultName);
+				if (file.exists()) {
+					System.out.println("Overriding existing file '" + file.getName() + "'");
+					file.delete();
+				}
+				MOARegressor.createFile(file);
+			} else {
+				System.out.println("Path '" + path + "' points to an existing file");
+				System.out.println("Overriding existing file '" + file.getName() + "'");
+				file.delete();
+				MOARegressor.createFile(file);
+			}
+		} else {
+			System.out.println("Path '" + path + "' does not exist");
+			// Check if path ends with an extension (i.e., a file)
+			if (file.getName().matches(".+\\..+")) {
+				System.out.println("Handling path '" + path + "' as a file");
+				// Check if parent folder exists
+				if (!file.getParentFile().exists()) {
+					System.out.println("Creating parent folder path '" + file.getParent() + "'");
+					file.getParentFile().mkdirs();
+				}
+				System.out.println("Creating file '" + file.getName() + "'");
+				MOARegressor.createFile(file);
+			} else {
+				System.out.println("Handling path '" + path + "' as a folder");
+				System.out.println("Creating folder path '" + file.getAbsolutePath() + "'");
+				file.mkdirs();
+				System.out.println("Creating file '" + defaultName + "' in this folder path");
+				file = new File(file.getAbsolutePath() + File.separator + defaultName);
+				MOARegressor.createFile(file);
+			}
+		}
+		System.out.println("----");
+		return file;
+	}
+
+	/**
+	 * Creates a file. Exits if the program throws an error while creating the file
+	 * 
+	 * @param file
+	 *            to create
+	 */
+	private static void createFile(File file) {
+		try {
+			file.createNewFile();
+		} catch (IOException e) {
+			System.err.println("Error creating file " + file.getAbsolutePath());
+			System.exit(1);
+		}
+	}
+
+	/**
+	 * @param outPath
+	 */
+	private void createOutputWriter(String outPath) {
+		File outFile = MOARegressor.getFile(outPath, "out.csv");
+		try {
+			this.output = new FileOutputStream(outFile);
+		} catch (FileNotFoundException e1) {
+			System.err.println("Internal error. File '" + outFile.getAbsolutePath() + "' does not exist");
+		}
+	}
+
 	/**
 	 * @param stream
 	 * @param learner
 	 * @param indexTrain
 	 * @param thresholdTrain
+	 * @return
 	 */
-	private void run(ArffFileStream stream, Classifier learner, int indexTrain, int thresholdTrain) {
-		//
+	private void run(ArffFileStream stream, Classifier learner, int indexTrain, double thresholdTrain,
+			double logMinDV) {
+		// Check if default index train (last column)
 		InstancesHeader ih = stream.getHeader();
 		if (indexTrain == -1) {
 			indexTrain = ih.numAttributes() - 1;
 		}
+		// Set actual header to learner
 		ih.deleteAttributeAt(indexTrain);
 		InstancesHeader actualHeader = new InstancesHeader(ih);
-		//
+		learner.setModelContext(actualHeader);
+		// Prepare for running
 		stream.prepareForUse();
 		learner.prepareForUse();
-		learner.setModelContext(actualHeader);
-		// Evaluate learner
+		// Initialize error sums and counters
 		double sumOfErrors = 0;
 		double sumOfSquareErrors = 0;
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
-		StringBuilder result = new StringBuilder();
-
-		int negatives = 0;
-
-//		for (int i = 0; i < 0; i++) {
+		// Get starting CPU time
+		boolean precise = TimingUtils.enablePreciseTiming();
+		long startTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
+		// Go through each instance
+//		for (int i = 0; i < 1000; i++) {
 		while (stream.hasMoreInstances()) {
-			// Obtain instance
+			// Get instance data
 			Instance instance = stream.nextInstance().getData();
 			int train = (int) instance.value(indexTrain);
-
-			// Remove column that indicates training
+			// Remove value that indicates training
 			instance.deleteAttributeAt(indexTrain);
 			instance.setDataset(actualHeader);
-
-			// Box-Cox transformation (Cube Root)
-			// System.out.println(instance.toString());
-			// instance.setClassValue(Math.cbrt(instance.classValue()));
-			// System.out.println(instance.toString());
-			// instance.setClassValue(Math.pow(instance.classValue(), 3));
-			// System.out.println(instance.toString());
-
-			// Adjusted Log Transformation
-			double minValue = 10000;
-			// instance.setClassValue(Math.log(instance.classValue() + 1 - minValue));
-			// System.out.println(instance.toString());
-			// instance.setClassValue(Math.exp(instance.classValue()) - 1 + minValue);
-			// System.out.println(instance.toString());
-
-			// Check if the instance is for prediction or training
+			// Get actual value of dependent variable
+			double actualDV = instance.classValue();
+			// Check if Log transformation is enabled
+			if (logMinDV >= 0) {
+				// Adjusted Log transformation on dependent variable
+				instance.setClassValue(Math.log(actualDV + 1 - logMinDV));
+			}
+			// Check if instance is for testing or training
+			
+			// ***********************************************
+			// Add min training instances ->  && countTrainSamples >= min(trainInstances)
+			// ***********************************************
+			
 			if (train == 0) {
-				// // Predict
-				// double predictedValue = learner.getPredictionForInstance(instance).getVote(0,
-				// 0);
-				// System.out.println(predictedValue);
-				System.out.println(learner.getVotesForInstance(instance).length);
-				double predictedValue = 0.0;
+				// Predict value
+				double prediction = 0.0;
 				if (learner.getVotesForInstance(instance).length > 0) {
-					predictedValue = learner.getVotesForInstance(instance)[0];
+					prediction = learner.getVotesForInstance(instance)[0];
 				}
-				System.out.println(predictedValue);
-				System.out.println("----");
-
-				if (predictedValue < 0) {
-					negatives++;
+				// Check if Log transformation is enabled
+				if (logMinDV >= 0) {
+					// Back adjusted Log transformation on prediction
+					prediction = Math.exp(prediction) - 1 + logMinDV;
 				}
-
-				// double predictedValue =
-				// Math.abs(learner.getPredictionForInstance(instance).getVote(0, 0));
-				// // Get real value
-				double actualValue = instance.classValue();
-				// // Compute error between predicted and actual value
-				// double error = Math.abs(predictedValue - actualValue);
-				// // Add error to the sum
-				// sumOfErrors += error;
-				// sumOfSquareErrors += Math.pow(error, 2);
-				// // Count test samples
+				// Compute error between predicted and actual values
+				double error = Math.abs(prediction - actualDV);
+				// Add error to the sums
+				sumOfErrors += error;
+				sumOfSquareErrors += Math.pow(error, 2);
+				// Count test samples
 				countTestSamples++;
-				// // Compute MAE
-				// double mae = sumOfErrors / countTestSamples;
-				// double rmse = Math.sqrt(sumOfSquareErrors / countTestSamples);
-				// // Generate report
-				// result.append(countTestSamples).append(",");
-				// result.append(countTrainSamples).append(",");
-				// result.append(predictedValue).append(",");
-				// result.append(actualValue).append(",");
-				// result.append(error).append(",");
-				// result.append(mae).append(",");
-				// result.append(rmse).append("\n");
-				// result.append("\n");
+				// Write CSV result
+				this.writeCSVResult(countTestSamples, countTrainSamples, prediction, actualDV, error, sumOfErrors,
+						sumOfSquareErrors);
 			} else {
 				// Check threshold
 				if (instance.classValue() > thresholdTrain) {
+					// Train on instance
 					learner.trainOnInstance(instance);
 					countTrainSamples++;
 				}
 			}
 		}
-
-		System.out.println("NEGATIVES = " + negatives);
-
-		// System.out.println(result.toString());
-
-		// // Check if output path exists
-		// File outFile = new File(outPath);
-		// if (outFile.exists()) {
-		// outFile.delete();
-		// }
-		// // Create CSV file writer
-		// FileOutputStream output;
-		// try {
-		// output = new FileOutputStream(outFile);
-		// // output.write(report.toString().getBytes());
-		// output.close();
-		// } catch (FileNotFoundException e1) {
-		// System.err.println("Internal error. File '" + outFile.getAbsolutePath() + "'
-		// does not exist");
-		// } catch (IOException e) {
-		// System.err.println("Internal error. Exception thrown when writing on the file
-		// '"
-		// + outFile.getAbsolutePath() + "'");
-		// }
-
+		double time = TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread() - startTime);
+		// Generate report statistics
+		StringBuilder report = new StringBuilder();
+		report.append("======================\n");
+		report.append("     FINAL REPORT     \n");
+		report.append("======================\n");
+		report.append("Done! in ").append(time).append(" seconds (precise? ").append(precise).append(")\n");
+		report.append("Instances\n");
+		report.append(" - Test = ").append(countTestSamples).append("\n");
+		report.append(" - Train = ").append(countTrainSamples).append("\n");
+		report.append("Errors\n");
+		report.append(" - MAE = ").append(sumOfErrors / countTestSamples).append("\n");
+		report.append(" - RMSE = ").append(Math.sqrt(sumOfSquareErrors / countTestSamples)).append("\n");
+		System.out.println(report.toString());
 	}
-	
+
 	/**
-	 * @param arffPath
-	 * @param indexClass
-	 * @return
+	 * @param numTests
+	 * @param numTrains
+	 * @param prediction
+	 * @param actual
+	 * @param error
+	 * @param sumOfErrors
+	 * @param sumOfSquareErrors
 	 */
-	private static ArffFileStream readStream(String arffPath, int indexClass) {
-		// Read ARFF file
-		ArffFileStream stream = new ArffFileStream(arffPath, indexClass);
-		//
-		if (indexClass == -1) {
-			indexClass = stream.getHeader().numAttributes() - 1;
-			stream.classIndexOption.setValue(indexClass);
-			stream.restart();
+	private void writeCSVResult(int numTests, int numTrains, double prediction, double actual, double error,
+			double sumOfErrors, double sumOfSquareErrors) {
+		// Compute MAE and RMSE
+		double mae = sumOfErrors / numTests;
+		double rmse = Math.sqrt(sumOfSquareErrors / numTests);
+		// Generate CSV result
+		StringBuilder csvLine = new StringBuilder();
+		csvLine.append(numTests).append(",");
+		csvLine.append(numTrains).append(",");
+		csvLine.append(prediction).append(",");
+		csvLine.append(actual).append(",");
+		csvLine.append(error).append(",");
+		csvLine.append(mae).append(",");
+		csvLine.append(rmse).append("\n");
+		// Write result to file
+		try {
+			this.output.write(csvLine.toString().getBytes());
+			this.output.flush();
+		} catch (IOException e) {
+			System.err.println("Internal error. Exception thrown when writing on the file");
 		}
-		return stream;
+	}
+
+	/**
+	 * 
+	 */
+	private void closeOutputWriter() {
+		try {
+			this.output.close();
+		} catch (IOException e) {
+			System.err.println("Internal error. Exception thrown when closing the file writer");
+		}
 	}
 
 }
