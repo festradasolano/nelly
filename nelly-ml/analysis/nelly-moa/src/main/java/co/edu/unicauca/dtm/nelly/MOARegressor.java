@@ -71,6 +71,7 @@ public class MOARegressor {
 	public MOARegressor(String outPath) {
 		super();
 		this.createOutputWriter(outPath);
+		this.writeCSVHeader();
 	}
 
 	/**
@@ -208,6 +209,7 @@ public class MOARegressor {
 				break;
 			}
 		}
+		System.out.println("----");
 		// Check if ARFF path exists
 		if (!new File(arffPath).exists()) {
 			System.out.println("File path '" + arffPath + "' does not exist");
@@ -365,6 +367,7 @@ public class MOARegressor {
 		try {
 			file.createNewFile();
 		} catch (IOException e) {
+			e.printStackTrace();
 			System.err.println("Error creating file " + file.getAbsolutePath());
 			System.exit(1);
 		}
@@ -377,8 +380,31 @@ public class MOARegressor {
 		File outFile = MOARegressor.getFile(outPath, "out.csv");
 		try {
 			this.output = new FileOutputStream(outFile);
-		} catch (FileNotFoundException e1) {
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
 			System.err.println("Internal error. File '" + outFile.getAbsolutePath() + "' does not exist");
+			System.exit(1);
+		}
+	}
+
+	/**
+	 * 
+	 */
+	private void writeCSVHeader() {
+		StringBuilder csvHeader = new StringBuilder();
+		csvHeader.append("num_tests,");
+		csvHeader.append("num_trains,");
+		csvHeader.append("prediction,");
+		csvHeader.append("actual_value,");
+		csvHeader.append("error,");
+		csvHeader.append("square_error,");
+		csvHeader.append("time\n");
+		try {
+			this.output.write(csvHeader.toString().getBytes());
+		} catch (IOException e) {
+			e.printStackTrace();
+			System.err.println("Internal error. Exception thrown when writing on the file");
+			System.exit(1);
 		}
 	}
 
@@ -404,15 +430,15 @@ public class MOARegressor {
 		stream.prepareForUse();
 		learner.prepareForUse();
 		// Initialize error sums and counters
-		double sumOfErrors = 0;
-		double sumOfSquareErrors = 0;
+		double sumErrors = 0;
+		double sumSquareErrors = 0;
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
 		// Get starting CPU time
 		boolean precise = TimingUtils.enablePreciseTiming();
-		long startTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
+		long startTotalTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
 		// Go through each instance
-//		for (int i = 0; i < 1000; i++) {
+		// for (int i = 0; i < 1000; i++) {
 		while (stream.hasMoreInstances()) {
 			// Get instance data
 			Instance instance = stream.nextInstance().getData();
@@ -428,12 +454,8 @@ public class MOARegressor {
 				instance.setClassValue(Math.log(actualDV + 1 - logMinDV));
 			}
 			// Check if instance is for testing or training
-			
-			// ***********************************************
-			// Add min training instances ->  && countTrainSamples >= min(trainInstances)
-			// ***********************************************
-			
 			if (train == 0) {
+				long startPredictionTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
 				// Predict value
 				double prediction = 0.0;
 				if (learner.getVotesForInstance(instance).length > 0) {
@@ -444,16 +466,19 @@ public class MOARegressor {
 					// Back adjusted Log transformation on prediction
 					prediction = Math.exp(prediction) - 1 + logMinDV;
 				}
+				// Check prediction time (in nanoseconds)
+				double predictionTime = TimingUtils.getNanoCPUTimeOfCurrentThread() - startPredictionTime;
 				// Compute error between predicted and actual values
 				double error = Math.abs(prediction - actualDV);
+				double squareError = Math.pow(error, 2);
 				// Add error to the sums
-				sumOfErrors += error;
-				sumOfSquareErrors += Math.pow(error, 2);
+				sumErrors += error;
+				sumSquareErrors += squareError;
 				// Count test samples
 				countTestSamples++;
 				// Write CSV result
-				this.writeCSVResult(countTestSamples, countTrainSamples, prediction, actualDV, error, sumOfErrors,
-						sumOfSquareErrors);
+				this.writeCSVResult(countTestSamples, countTrainSamples, prediction, actualDV, error, squareError,
+						predictionTime);
 			} else {
 				// Check threshold
 				if (instance.classValue() > thresholdTrain) {
@@ -463,19 +488,25 @@ public class MOARegressor {
 				}
 			}
 		}
-		double time = TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread() - startTime);
+		// Check elapsed time
+		double totalTime = TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread() - startTotalTime);
+		// Compute MAE and RMSE
+		double mae = sumErrors / countTestSamples;
+		double rmse = Math.sqrt(sumSquareErrors / countTestSamples);
+		// Write last CSV result ()
+		this.writeCSVResult(countTestSamples, countTrainSamples, 0, 0, mae, rmse, totalTime);
 		// Generate report statistics
 		StringBuilder report = new StringBuilder();
 		report.append("======================\n");
 		report.append("     FINAL REPORT     \n");
 		report.append("======================\n");
-		report.append("Done! in ").append(time).append(" seconds (precise? ").append(precise).append(")\n");
+		report.append("Done! in ").append(totalTime).append(" seconds (precise? ").append(precise).append(")\n");
 		report.append("Instances\n");
 		report.append(" - Test = ").append(countTestSamples).append("\n");
 		report.append(" - Train = ").append(countTrainSamples).append("\n");
 		report.append("Errors\n");
-		report.append(" - MAE = ").append(sumOfErrors / countTestSamples).append("\n");
-		report.append(" - RMSE = ").append(Math.sqrt(sumOfSquareErrors / countTestSamples)).append("\n");
+		report.append(" - MAE = ").append(mae).append("\n");
+		report.append(" - RMSE = ").append(rmse).append("\n");
 		System.out.println(report.toString());
 	}
 
@@ -485,14 +516,11 @@ public class MOARegressor {
 	 * @param prediction
 	 * @param actual
 	 * @param error
-	 * @param sumOfErrors
-	 * @param sumOfSquareErrors
+	 * @param squareError
+	 * @param time
 	 */
 	private void writeCSVResult(int numTests, int numTrains, double prediction, double actual, double error,
-			double sumOfErrors, double sumOfSquareErrors) {
-		// Compute MAE and RMSE
-		double mae = sumOfErrors / numTests;
-		double rmse = Math.sqrt(sumOfSquareErrors / numTests);
+			double squareError, double time) {
 		// Generate CSV result
 		StringBuilder csvLine = new StringBuilder();
 		csvLine.append(numTests).append(",");
@@ -500,14 +528,16 @@ public class MOARegressor {
 		csvLine.append(prediction).append(",");
 		csvLine.append(actual).append(",");
 		csvLine.append(error).append(",");
-		csvLine.append(mae).append(",");
-		csvLine.append(rmse).append("\n");
+		csvLine.append(squareError).append(",");
+		csvLine.append(time).append("\n");
 		// Write result to file
 		try {
 			this.output.write(csvLine.toString().getBytes());
 			this.output.flush();
 		} catch (IOException e) {
+			e.printStackTrace();
 			System.err.println("Internal error. Exception thrown when writing on the file");
+			System.exit(1);
 		}
 	}
 
@@ -518,7 +548,9 @@ public class MOARegressor {
 		try {
 			this.output.close();
 		} catch (IOException e) {
+			e.printStackTrace();
 			System.err.println("Internal error. Exception thrown when closing the file writer");
+			System.exit(1);
 		}
 	}
 
