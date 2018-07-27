@@ -483,6 +483,10 @@ public class MOARegressor {
 				// Check threshold
 				if (instance.classValue() > thresholdTrain) {
 					// Train on instance
+					if (actualDV >= 10000000) {
+						System.out.println(actualDV/10000000.0);
+						instance.setWeight(actualDV/10000000.0);						
+					}
 					learner.trainOnInstance(instance);
 					countTrainSamples++;
 				}
