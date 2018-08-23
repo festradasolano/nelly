@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.yahoo.labs.samoa.instances.Attribute;
 import com.yahoo.labs.samoa.instances.Instance;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
 
@@ -61,22 +62,6 @@ public class MOARegressor {
 	/**
 	 * 
 	 */
-	public MOARegressor() {
-		super();
-	}
-
-	/**
-	 * @param outPath
-	 */
-	public MOARegressor(String outPath) {
-		super();
-		this.createOutputWriter(outPath);
-		this.writeCSVHeader();
-	}
-
-	/**
-	 * 
-	 */
 	private static final Map<String, Integer> options;
 	static {
 		options = new HashMap<String, Integer>();
@@ -108,6 +93,34 @@ public class MOARegressor {
 		learnerOptions.put("randomamrules", 9);
 		learnerOptions.put("fimtdd", 10);
 		learnerOptions.put("orto", 11);
+	}
+
+	/**
+	 * 
+	 */
+	private static final String TESTING_INSTANCE = "F";
+
+	/**
+	 * 
+	 */
+	private static final String TRAINING_INSTANCE = "F";
+
+	/**
+	 * Constructor
+	 */
+	public MOARegressor() {
+		super();
+	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @param outPath file path for writing the results 
+	 */
+	public MOARegressor(String outPath) {
+		super();
+		this.createOutputWriter(outPath);
+		this.writeCSVHeader();
 	}
 
 	/**
@@ -422,6 +435,8 @@ public class MOARegressor {
 		if (indexTrain == -1) {
 			indexTrain = ih.numAttributes() - 1;
 		}
+		// Get train attribute
+		Attribute trainAtt = ih.attribute(indexTrain);
 		// Set actual header to learner
 		ih.deleteAttributeAt(indexTrain);
 		InstancesHeader actualHeader = new InstancesHeader(ih);
@@ -434,15 +449,15 @@ public class MOARegressor {
 		double sumSquareErrors = 0;
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
+		int countErrorSamples = 0;
 		// Get starting CPU time
 		boolean precise = TimingUtils.enablePreciseTiming();
 		long startTotalTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
 		// Go through each instance
-		// for (int i = 0; i < 1000; i++) {
 		while (stream.hasMoreInstances()) {
 			// Get instance data
 			Instance instance = stream.nextInstance().getData();
-			int train = (int) instance.value(indexTrain);
+			String train = trainAtt.value((int) instance.value(indexTrain));
 			// Remove value that indicates training
 			instance.deleteAttributeAt(indexTrain);
 			instance.setDataset(actualHeader);
@@ -454,7 +469,7 @@ public class MOARegressor {
 				instance.setClassValue(Math.log(actualDV + 1 - logMinDV));
 			}
 			// Check if instance is for testing or training
-			if (train == 0) {
+			if (train.equalsIgnoreCase(MOARegressor.TESTING_INSTANCE)) {
 				long startPredictionTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
 				// Predict value
 				double prediction = 0.0;
@@ -479,17 +494,18 @@ public class MOARegressor {
 				// Write CSV result
 				this.writeCSVResult(countTestSamples, countTrainSamples, prediction, actualDV, error, squareError,
 						predictionTime);
-			} else {
+			} else if (train.equalsIgnoreCase(MOARegressor.TRAINING_INSTANCE)) {
 				// Check threshold
 				if (instance.classValue() > thresholdTrain) {
 					// Train on instance
-					if (actualDV >= 10000000) {
-						System.out.println(actualDV/10000000.0);
-						instance.setWeight(actualDV/10000000.0);						
-					}
 					learner.trainOnInstance(instance);
 					countTrainSamples++;
 				}
+			} else {
+				// Train mark not recognized
+				System.out.println("Train value '" + train + "' is not recognized. Check instance " + instance.toString() + train);
+				// Count error samples
+				countErrorSamples++;
 			}
 		}
 		// Check elapsed time
@@ -508,6 +524,7 @@ public class MOARegressor {
 		report.append("Instances\n");
 		report.append(" - Test = ").append(countTestSamples).append("\n");
 		report.append(" - Train = ").append(countTrainSamples).append("\n");
+		report.append(" - Error = ").append(countErrorSamples).append("\n");
 		report.append("Errors\n");
 		report.append(" - MAE = ").append(mae).append("\n");
 		report.append(" - RMSE = ").append(rmse).append("\n");
