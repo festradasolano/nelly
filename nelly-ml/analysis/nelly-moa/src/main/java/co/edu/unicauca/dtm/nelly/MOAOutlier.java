@@ -27,19 +27,15 @@ import com.yahoo.labs.samoa.instances.Attribute;
 import com.yahoo.labs.samoa.instances.Instance;
 import com.yahoo.labs.samoa.instances.InstancesHeader;
 
-import moa.classifiers.Classifier;
-import moa.classifiers.functions.AdaGrad;
-import moa.classifiers.functions.SGD;
-import moa.classifiers.meta.RandomRules;
-import moa.classifiers.rules.AMRulesRegressor;
-import moa.classifiers.rules.functions.AdaptiveNodePredictor;
-import moa.classifiers.rules.functions.FadingTargetMean;
-import moa.classifiers.rules.functions.LowPassFilteredLearner;
-import moa.classifiers.rules.functions.Perceptron;
-import moa.classifiers.rules.functions.TargetMean;
-import moa.classifiers.rules.meta.RandomAMRules;
-import moa.classifiers.trees.FIMTDD;
-import moa.classifiers.trees.ORTO;
+import moa.clusterers.Clusterer;
+import moa.clusterers.outliers.MyBaseOutlierDetector.Outlier;
+import moa.clusterers.outliers.MyBaseOutlierDetector;
+import moa.clusterers.outliers.AbstractC.AbstractC;
+import moa.clusterers.outliers.Angiulli.ApproxSTORM;
+import moa.clusterers.outliers.Angiulli.ExactSTORM;
+import moa.clusterers.outliers.AnyOut.AnyOut;
+import moa.clusterers.outliers.MCOD.MCOD;
+import moa.clusterers.outliers.SimpleCOD.SimpleCOD;
 import moa.core.TimingUtils;
 import moa.streams.ArffFileStream;
 
@@ -52,8 +48,8 @@ import moa.streams.ArffFileStream;
  * 
  * @author festradasolano
  */
-public class MOARegressor {
-
+public class MOAOutlier {
+	
 	/**
 	 * 
 	 */
@@ -69,10 +65,9 @@ public class MOARegressor {
 		options.put("--arff", 1);
 		options.put("--out", 2);
 		options.put("--learner", 3);
-		options.put("--idxDV", 4);
+		options.put("--idxClass", 4);
 		options.put("--idxTrain", 5);
-		options.put("--thrTrain", 6);
-		options.put("--logMinDV", 7);
+		options.put("--normClass", 6);
 	}
 
 	/**
@@ -81,24 +76,18 @@ public class MOARegressor {
 	private static final Map<String, Integer> learnerOptions;
 	static {
 		learnerOptions = new HashMap<String, Integer>();
-		learnerOptions.put("adagrad", 0);
-		learnerOptions.put("sgd", 1);
-		learnerOptions.put("randomrules", 2);
-		learnerOptions.put("amrules", 3);
-		learnerOptions.put("adaptivenode", 4);
-		learnerOptions.put("fadingtarget", 5);
-		learnerOptions.put("lowpassfiler", 6);
-		learnerOptions.put("perceptron", 7);
-		learnerOptions.put("targetmean", 8);
-		learnerOptions.put("randomamrules", 9);
-		learnerOptions.put("fimtdd", 10);
-		learnerOptions.put("orto", 11);
+		learnerOptions.put("abstractc", 0);
+		learnerOptions.put("approxstorm", 1);
+		learnerOptions.put("exactstorm", 2);
+		learnerOptions.put("anyout", 3);
+		learnerOptions.put("mcod", 4);
+		learnerOptions.put("simplecod", 5);
 	}
 
 	/**
 	 * Constructor
 	 */
-	public MOARegressor() {
+	public MOAOutlier() {
 		super();
 	}
 
@@ -107,7 +96,7 @@ public class MOARegressor {
 	 * 
 	 * @param outPath file path for writing the results 
 	 */
-	public MOARegressor(String outPath) {
+	public MOAOutlier(String outPath) {
 		super();
 		this.createOutputWriter(outPath);
 		this.writeCSVHeader();
@@ -120,27 +109,26 @@ public class MOARegressor {
 		// Define default arguments
 		String arffPath = System.getProperty("user.home") + File.separator + "data.arff";
 		String outPath = System.getProperty("user.home") + File.separator + "out.csv";
-		String learnerName = "fimtdd";
-		int indexDV = -1;
+		String learnerName = "mcod";
+		int indexClass = -1;
 		int indexTrain = -1;
-		double thresholdTrain = 0;
-		double logMinDV = -1;
+		String normalClass = "M";
 		// Get parameters from arguments
 		for (int i = 0; i < args.length; i++) {
 			// Check that given option exists
 			int option = 0;
-			if (MOARegressor.options.containsKey(args[i])) {
-				option = MOARegressor.options.get(args[i]);
+			if (MOAOutlier.options.containsKey(args[i])) {
+				option = MOAOutlier.options.get(args[i]);
 			} else {
 				System.out.println("Option " + args[i] + " does not exist");
-				MOARegressor.printHelp();
+				MOAOutlier.printHelp();
 				System.exit(1);
 			}
 			// Set parameter corresponding to option
 			switch (option) {
 			// Help
 			case 0:
-				MOARegressor.printHelp();
+				MOAOutlier.printHelp();
 				System.exit(0);
 				break;
 			// ARFF
@@ -158,16 +146,16 @@ public class MOARegressor {
 				i++;
 				learnerName = args[i];
 				break;
-			// INDEX DEPENDENT VARIABLE
+			// INDEX CLASS
 			case 4:
 				i++;
-				// Parse index of the column of dependent variables
+				// Parse index of the class column
 				try {
-					indexDV = Integer.parseInt(args[i]);
+					indexClass = Integer.parseInt(args[i]);
 				} catch (Exception e) {
-					indexDV = -1;
-					System.out.println("Error parsing idxDV '" + args[i]
-							+ "' to integer. Using by default the SECOND-LAST column for dependent variables.");
+					indexClass = -1;
+					System.out.println("Error parsing idxClass '" + args[i]
+							+ "' to integer. Using by default the SECOND-LAST column for classes.");
 				}
 				break;
 			// INDEX TRAIN
@@ -182,29 +170,10 @@ public class MOARegressor {
 							+ "' to integer. Using by default the LAST column as identifier of training instances.");
 				}
 				break;
-			// THRESHOLD TRAIN
+			// NORMAL CLASS
 			case 6:
 				i++;
-				// Parse threshold that identifies instances for training
-				try {
-					thresholdTrain = Double.parseDouble(args[i]);
-				} catch (Exception e) {
-					thresholdTrain = 0;
-					System.out.println("Error parsing thrTrain '" + args[i]
-							+ "' to integer. Using by default 0 as threshold of training instances.");
-				}
-				break;
-			// LOG TRANSFORMATION
-			case 7:
-				i++;
-				// Parse minimum value for log transformation
-				try {
-					logMinDV = Double.parseDouble(args[i]);
-				} catch (Exception e) {
-					logMinDV = -1;
-					System.out.println("Error parsing logMinDV '" + args[i]
-							+ "' to integer. By default, log transformation is not carried out.");
-				}
+				normalClass = args[i];
 				break;
 			// ERROR
 			default:
@@ -220,12 +189,12 @@ public class MOARegressor {
 			System.exit(1);
 		}
 		// Get learning algorithm
-		Classifier learner = MOARegressor.getLearner(learnerName);
+		MyBaseOutlierDetector learner = MOAOutlier.getLearner(learnerName);
 		// Run
-		MOARegressor regressor = new MOARegressor(outPath);
-		regressor.run(MOAUtilities.readStream(arffPath, indexDV), learner, indexTrain, thresholdTrain, logMinDV);
+		MOAOutlier outlier = new MOAOutlier(outPath);
+		outlier.run(MOAUtilities.readStream(arffPath, indexClass), learner, indexTrain, normalClass);
 		// Close output writer
-		regressor.closeOutputWriter();
+		outlier.closeOutputWriter();
 	}
 
 	/**
@@ -244,48 +213,33 @@ public class MOARegressor {
 	}
 
 	/**
-	 * @param regressorName
+	 * @param learnerName
 	 * @return
 	 */
-	private static Classifier getLearner(String regressorName) {
+	private static MyBaseOutlierDetector getLearner(String learnerName) {
 		// Check that given learner name exists
 		int learnerOption = -1;
-		if (MOARegressor.learnerOptions.containsKey(regressorName)) {
-			learnerOption = MOARegressor.learnerOptions.get(regressorName);
+		if (MOAOutlier.learnerOptions.containsKey(learnerName)) {
+			learnerOption = MOAOutlier.learnerOptions.get(learnerName);
 		} else {
-			System.out.println("Learner " + regressorName + " does not exist");
-			MOARegressor.printHelp();
+			System.out.println("Learner " + learnerName + " does not exist");
+			MOAOutlier.printHelp();
 			System.exit(1);
 		}
 		// Return corresponding learner
 		switch (learnerOption) {
 		case 0:
-			return new AdaGrad();
+			return new AbstractC();
 		case 1:
-			return new SGD();
+			return new ApproxSTORM();
 		case 2:
-			return new RandomRules();
+			return new ExactSTORM();
 		case 3:
-			return new AMRulesRegressor();
+			return new AnyOut();
 		case 4:
-			// Based on Perceptron - same issues
-			return new AdaptiveNodePredictor();
+			return new MCOD();
 		case 5:
-			return new FadingTargetMean();
-		case 6:
-			return new LowPassFilteredLearner();
-		case 7:
-			// Not working with a class index other than the second last due to MOA
-			// implementation issues
-			return new Perceptron();
-		case 8:
-			return new TargetMean();
-		case 9:
-			return new RandomAMRules();
-		case 10:
-			return new FIMTDD();
-		case 11:
-			return new ORTO();
+			return new SimpleCOD();
 		default:
 			System.err.println("Internal error. Learner " + learnerOption + " is not implemented");
 			System.exit(1);
@@ -308,7 +262,7 @@ public class MOARegressor {
 	}
 
 	/**
-	 * 
+	 * FIXME
 	 */
 	private void writeCSVHeader() {
 		StringBuilder csvHeader = new StringBuilder();
@@ -332,17 +286,21 @@ public class MOARegressor {
 	 * @param stream
 	 * @param learner
 	 * @param indexTrain
-	 * @param thresholdTrain
-	 * @param logMinDV
+	 * @return
 	 */
-	private void run(ArffFileStream stream, Classifier learner, int indexTrain, double thresholdTrain,
-			double logMinDV) {
+	private void run(ArffFileStream stream, MyBaseOutlierDetector learner, int indexTrain, String normalClass) {
 		// Check if default index train (last column)
 		InstancesHeader ih = stream.getHeader();
 		if (indexTrain == -1) {
 			indexTrain = ih.numAttributes() - 1;
 		}
-		// Get train attribute
+		// Get index of normal class
+		int idxNormalClass = ih.classAttribute().indexOfValue(normalClass);
+		
+		// FIXME delete
+		System.out.println("Index normal class = " + idxNormalClass);
+		
+		// Get class and train attributes
 		Attribute trainAtt = ih.attribute(indexTrain);
 		// Set actual header to learner
 		ih.deleteAttributeAt(indexTrain);
@@ -351,9 +309,13 @@ public class MOARegressor {
 		// Prepare for running
 		stream.prepareForUse();
 		learner.prepareForUse();
-		// Initialize error sums and counters
-		double sumErrors = 0;
-		double sumSquareErrors = 0;
+		// Initialize counters
+		int actualPositives = 0;
+		int actualNegatives = 0;
+		int truePositives = 0;
+		int trueNegatives = 0;
+		int falsePositives = 0;
+		int falseNegatives = 0;
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
 		int countErrorSamples = 0;
@@ -361,49 +323,48 @@ public class MOARegressor {
 		boolean precise = TimingUtils.enablePreciseTiming();
 		long startTotalTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
 		// Go through each instance
-		while (stream.hasMoreInstances()) {
+		for (int i = 0; i < 1000; i++) {
+//		while (stream.hasMoreInstances()) {
 			// Get instance data
 			Instance instance = stream.nextInstance().getData();
 			String train = trainAtt.value((int) instance.value(indexTrain));
 			// Remove value that indicates training
 			instance.deleteAttributeAt(indexTrain);
 			instance.setDataset(actualHeader);
-			// Get actual value of dependent variable
-			double actualDV = instance.classValue();
-			// Check if Log transformation is enabled
-			if (logMinDV >= 0) {
-				// Adjusted Log transformation on dependent variable
-				instance.setClassValue(Math.log(actualDV + 1 - logMinDV));
-			}
+			// Get actual class
+			int idxActualClass = (int) instance.classValue();
+			String actualClass = instance.classAttribute().value(idxActualClass);
 			// Check if instance is for testing or training
 			if (train.equalsIgnoreCase(MOAUtilities.TESTING_INSTANCE)) {
 				long startPredictionTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
-				// Predict value
-				double prediction = 0.0;
-				if (learner.getVotesForInstance(instance).length > 0) {
-					prediction = learner.getVotesForInstance(instance)[0];
-				}
-				// Check if Log transformation is enabled
-				if (logMinDV >= 0) {
-					// Back adjusted Log transformation on prediction
-					prediction = Math.exp(prediction) - 1 + logMinDV;
-				}
+				// Predict outlier
+				int idxPredictClass = idxNormalClass;
+//				System.out.println("Prediction = " + learner.getVotesForInstance(instance));
+//				if (learner.getVotesForInstance(instance).length > 0) {
+//					idxPredictClass = (int) learner.getVotesForInstance(instance)[0];
+//				}
+				
+				
+				
 				// Check prediction time (in nanoseconds)
 				double predictionTime = TimingUtils.getNanoCPUTimeOfCurrentThread() - startPredictionTime;
-				// Compute error between predicted and actual values
-				double error = Math.abs(prediction - actualDV);
-				double squareError = Math.pow(error, 2);
-				// Add error to the sums
-				sumErrors += error;
-				sumSquareErrors += squareError;
+				
+//				System.out.println("Prediction = " + idxPredictClass);
+				
+//				// Compute error between predicted and actual values
+//				double error = Math.abs(idxPredictClass - actualClass);
+//				double squareError = Math.pow(error, 2);
+//				// Add error to the sums
+//				sumErrors += error;
+//				sumSquareErrors += squareError;
 				// Count test samples
 				countTestSamples++;
-				// Write CSV result
-				this.writeCSVResult(countTestSamples, countTrainSamples, prediction, actualDV, error, squareError,
-						predictionTime);
+//				// Write CSV result
+//				this.writeCSVResult(countTestSamples, countTrainSamples, idxPredictClass, actualClass, error, squareError,
+//						predictionTime);
 			} else if (train.equalsIgnoreCase(MOAUtilities.TRAINING_INSTANCE)) {
-				// Check threshold
-				if (instance.classValue() > thresholdTrain) {
+				// Check if instance belongs to normal class
+				if (actualClass.equalsIgnoreCase(normalClass)) {
 					// Train on instance
 					learner.trainOnInstance(instance);
 					countTrainSamples++;
@@ -415,13 +376,19 @@ public class MOARegressor {
 				countErrorSamples++;
 			}
 		}
+		
+//		System.out.println(learner.PrintOutliers());
+		learner.PrintOutliers();
+		
+//		System.out.println("Result = " + learner.getClusteringResult());
+		
 		// Check elapsed time
 		double totalTime = TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread() - startTotalTime);
 		// Compute MAE and RMSE
-		double mae = sumErrors / countTestSamples;
-		double rmse = Math.sqrt(sumSquareErrors / countTestSamples);
+//		double mae = sumErrors / countTestSamples;
+//		double rmse = Math.sqrt(sumSquareErrors / countTestSamples);
 		// Write last CSV result ()
-		this.writeCSVResult(countTestSamples, countTrainSamples, 0, 0, mae, rmse, totalTime);
+//		this.writeCSVResult(countTestSamples, countTrainSamples, 0, 0, mae, rmse, totalTime);
 		// Generate report statistics
 		StringBuilder report = new StringBuilder();
 		report.append("======================\n");
@@ -432,9 +399,9 @@ public class MOARegressor {
 		report.append(" - Test = ").append(countTestSamples).append("\n");
 		report.append(" - Train = ").append(countTrainSamples).append("\n");
 		report.append(" - Error = ").append(countErrorSamples).append("\n");
-		report.append("Errors\n");
-		report.append(" - MAE = ").append(mae).append("\n");
-		report.append(" - RMSE = ").append(rmse).append("\n");
+//		report.append("Errors\n");
+//		report.append(" - MAE = ").append(mae).append("\n");
+//		report.append(" - RMSE = ").append(rmse).append("\n");
 		System.out.println(report.toString());
 	}
 
