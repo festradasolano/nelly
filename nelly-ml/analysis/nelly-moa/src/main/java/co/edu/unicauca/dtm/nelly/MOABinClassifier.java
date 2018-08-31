@@ -21,7 +21,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import com.yahoo.labs.samoa.instances.Attribute;
@@ -186,7 +185,8 @@ public class MOABinClassifier {
 	/**
 	 * Constructor
 	 * 
-	 * @param outPath file path for writing the results 
+	 * @param outPath
+	 *            file path for writing the results
 	 */
 	public MOABinClassifier(String outPath) {
 		super();
@@ -287,7 +287,8 @@ public class MOABinClassifier {
 		// Check that positive class exist
 		Attribute classAtt = stream.getHeader().classAttribute();
 		if (!classAtt.getAttributeValues().contains(positiveClass)) {
-			System.out.println("Class value '" + positiveClass + "' does not exist. The set of class values is " + classAtt.getAttributeValues());
+			System.out.println("Class value '" + positiveClass + "' does not exist. The set of class values is "
+					+ classAtt.getAttributeValues());
 			System.exit(1);
 		}
 		// Get index of positive class
@@ -456,16 +457,20 @@ public class MOABinClassifier {
 	}
 
 	/**
-	 * FIXME
+	 * 
 	 */
 	private void writeCSVHeader() {
 		StringBuilder csvHeader = new StringBuilder();
 		csvHeader.append("num_tests,");
 		csvHeader.append("num_trains,");
-		csvHeader.append("prediction,");
-		csvHeader.append("actual_value,");
-		csvHeader.append("error,");
-		csvHeader.append("square_error,");
+		csvHeader.append("predicted_class,");
+		csvHeader.append("actual_class,");
+		csvHeader.append("actual_pos,");
+		csvHeader.append("actual_neg,");
+		csvHeader.append("true_pos,");
+		csvHeader.append("true_neg,");
+		csvHeader.append("false_pos,");
+		csvHeader.append("false_neg,");
 		csvHeader.append("time\n");
 		try {
 			this.output.write(csvHeader.toString().getBytes());
@@ -480,7 +485,7 @@ public class MOABinClassifier {
 	 * @param stream
 	 * @param learner
 	 * @param indexTrain
-	 * @return
+	 * @param positiveClass
 	 */
 	private void run(ArffFileStream stream, Classifier learner, int indexTrain, int positiveClass) {
 		// Check if default index train (last column)
@@ -489,6 +494,7 @@ public class MOABinClassifier {
 			indexTrain = ih.numAttributes() - 1;
 		}
 		// Get class and train attributes
+		Attribute classAtt = ih.classAttribute();
 		Attribute trainAtt = ih.attribute(indexTrain);
 		// Set actual header to learner
 		ih.deleteAttributeAt(indexTrain);
@@ -507,11 +513,15 @@ public class MOABinClassifier {
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
 		int countErrorSamples = 0;
+		
+		int trainPositives = 0;
+		int trainNegatives = 0;
+		
 		// Get starting CPU time
 		boolean precise = TimingUtils.enablePreciseTiming();
 		long startTotalTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
 		// Go through each instance
-//		for (int i = 0; i < 1000; i++) {
+//		 for (int i = 0; i < 1000; i++) {
 		while (stream.hasMoreInstances()) {
 			// Get instance data
 			Instance instance = stream.nextInstance().getData();
@@ -519,13 +529,13 @@ public class MOABinClassifier {
 			// Remove value that indicates training
 			instance.deleteAttributeAt(indexTrain);
 			instance.setDataset(actualHeader);
+			// Get actual class
+			int actualClass = (int) instance.classValue();
 			// Check if instance is for testing or training
 			if (train.equalsIgnoreCase(MOAUtilities.TESTING_INSTANCE)) {
 				long startPredictionTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
-				// Clasify instance
+				// Classify instance
 				int predictClass = Utils.maxIndex(learner.getVotesForInstance(instance));
-				// Get actual class
-				int actualClass = (int) instance.classValue();
 				// Check if instance is positive or negative
 				if (actualClass == positiveClass) {
 					actualPositives++;
@@ -548,28 +558,51 @@ public class MOABinClassifier {
 				double predictionTime = TimingUtils.getNanoCPUTimeOfCurrentThread() - startPredictionTime;
 				// Count test samples
 				countTestSamples++;
-//				// Write CSV result
-//				this.writeCSVResult(countTestSamples, countTrainSamples, idxPredictClass, actualClass, error, squareError,
-//						predictionTime);
+				// Write CSV result
+				this.writeCSVResult(countTestSamples, countTrainSamples, classAtt.value(predictClass),
+						classAtt.value(actualClass), actualPositives, actualNegatives, truePositives, trueNegatives,
+						falsePositives, falseNegatives, predictionTime);
 			} else if (train.equalsIgnoreCase(MOAUtilities.TRAINING_INSTANCE)) {
+				
+				double weight = 0.0;
+				if (actualClass == positiveClass) {
+					trainPositives++;
+					weight = 1.0 - (1.0 * trainPositives / (trainPositives + trainNegatives));
+//					System.out.println("Training positive");
+				} else {
+					trainNegatives++;
+					weight = 1.0 - (1.0 * trainNegatives / (trainPositives + trainNegatives));
+//					System.out.println("Training negative");
+				}
+				// ADD OPTION FOR USING WEIGHTS (--weights default|inverse|constant)
+				instance.setWeight(weight);
+//				System.out.println(weight);
+				
 				// Train on instance
 				learner.trainOnInstance(instance);
 				countTrainSamples++;
 			} else {
 				// Train mark not recognized
-				System.out.println("Train value '" + train + "' is not recognized. Check instance " + instance.toString() + train);
+				System.out.println(
+						"Train value '" + train + "' is not recognized. Check instance " + instance.toString() + train);
 				// Count error samples
 				countErrorSamples++;
 			}
 		}
 		// Check elapsed time
 		double totalTime = TimingUtils.nanoTimeToSeconds(TimingUtils.getNanoCPUTimeOfCurrentThread() - startTotalTime);
-		// Compute MAE and RMSE
-		double accuracy = 100.0 * (truePositives + trueNegatives) / (actualPositives + actualNegatives);
-		double precision = 100.0 * truePositives / (truePositives + falsePositives);
-		double recall = 100.0 * truePositives / actualPositives;
-		// Write last CSV result ()
-//		this.writeCSVResult(countTestSamples, countTrainSamples, 0, 0, mae, rmse, totalTime);
+		// Compute accuracy metrics
+		double accuracy = 1.0 * (truePositives + trueNegatives) / (actualPositives + actualNegatives);
+		double precision = 1.0 * truePositives / (truePositives + falsePositives); // Positive Predictive Value (PPV)
+		double npv = 1.0 * trueNegatives / (trueNegatives + falseNegatives); // Negative Predictive Value (NPV)
+		double recall = 1.0 * truePositives / actualPositives; // True Positive Rate (TPR)
+		double specificity = 1.0 * trueNegatives / actualNegatives; // True Negative Rate (TNR)
+		double fallOut = 1.0 * falsePositives / actualNegatives; // False Positive Rate (FPR)
+		double missRate = 1.0 * falseNegatives / actualPositives; // False Negative Rate (FNR)
+		double f1Score = 2 * ((precision * recall) / (precision + recall)); // Harmonic mean of precision and recall
+		// Write last CSV result
+		this.writeCSVResult(countTestSamples, countTrainSamples, String.valueOf(accuracy), String.valueOf(f1Score),
+				precision, npv, recall, specificity, fallOut, missRate, totalTime);
 		// Generate report statistics
 		StringBuilder report = new StringBuilder();
 		report.append("======================\n");
@@ -580,39 +613,57 @@ public class MOABinClassifier {
 		report.append(" - Test = ").append(countTestSamples).append("\n");
 		report.append(" - Train = ").append(countTrainSamples).append("\n");
 		report.append(" - Error = ").append(countErrorSamples).append("\n");
+		report.append("\n");
 		report.append("Confusion matrix\n");
 		report.append("\t\t\t\t\t\t ACTUAL\n");
 		report.append("\t\t\t\t\tPositive\tNegative\tTOTAL\n");
-		report.append("\tCLASSIFICATION\tPositive\t" + truePositives + "\t\t" + falsePositives + "\t\t" + (truePositives + falsePositives) + "\n");
-		report.append("\t\t\tNegative\t" + falseNegatives + "\t\t" + trueNegatives + "\t\t" + (falseNegatives + trueNegatives) + "\n");
-		report.append("\t\tTOTAL\t\t\t" + actualPositives + "\t\t" + actualNegatives + "\t\t" + (actualPositives + actualNegatives) + "\n");
+		report.append("\tPREDICTED\tPositive\t" + truePositives + "\t\t" + falsePositives + "\t\t"
+				+ (truePositives + falsePositives) + "\n");
+		report.append("\t\t\tNegative\t" + falseNegatives + "\t\t" + trueNegatives + "\t\t"
+				+ (falseNegatives + trueNegatives) + "\n");
+		report.append("\t\tTOTAL\t\t\t" + actualPositives + "\t\t" + actualNegatives + "\t\t"
+				+ (actualPositives + actualNegatives) + "\n");
 		report.append("\n");
 		report.append("Accuracy metrics\n");
-		report.append(" - Accuracy = ").append(accuracy).append("\n");
-		report.append(" - Precision = ").append(precision).append("\n");
-		report.append(" - Recall = ").append(recall).append("\n");
+		report.append(" - Accuracy = ").append(100 * accuracy).append(" %\n");
+		report.append(" - F1 score = ").append(f1Score).append("\n");
+		report.append(" - Precision (PPV) = ").append(100 * precision).append(" %\n");
+		report.append(" - NPV = ").append(100 * npv).append(" %\n");
+		report.append(" - Recall (TPR) = ").append(100 * recall).append(" %\n");
+		report.append(" - Specificity (TNR) = ").append(100 * specificity).append(" %\n");
+		report.append(" - Fall-out (FPR) = ").append(100 * fallOut).append(" %\n");
+		report.append(" - Miss rate (FNR) = ").append(100 * missRate).append(" %\n");
 		System.out.println(report.toString());
 	}
 
 	/**
 	 * @param numTests
 	 * @param numTrains
-	 * @param prediction
-	 * @param actual
-	 * @param error
-	 * @param squareError
+	 * @param predictClass
+	 * @param actualClass
+	 * @param actualPositives
+	 * @param actualNegatives
+	 * @param truePositives
+	 * @param trueNegatives
+	 * @param falsePositives
+	 * @param falseNegatives
 	 * @param time
 	 */
-	private void writeCSVResult(int numTests, int numTrains, double prediction, double actual, double error,
-			double squareError, double time) {
+	private void writeCSVResult(int numTests, int numTrains, String predictClass, String actualClass,
+			double actualPositives, double actualNegatives, double truePositives, double trueNegatives,
+			double falsePositives, double falseNegatives, double time) {
 		// Generate CSV result
 		StringBuilder csvLine = new StringBuilder();
 		csvLine.append(numTests).append(",");
 		csvLine.append(numTrains).append(",");
-		csvLine.append(prediction).append(",");
-		csvLine.append(actual).append(",");
-		csvLine.append(error).append(",");
-		csvLine.append(squareError).append(",");
+		csvLine.append(predictClass).append(",");
+		csvLine.append(actualClass).append(",");
+		csvLine.append(actualPositives).append(",");
+		csvLine.append(actualNegatives).append(",");
+		csvLine.append(truePositives).append(",");
+		csvLine.append(trueNegatives).append(",");
+		csvLine.append(falsePositives).append(",");
+		csvLine.append(falseNegatives).append(",");
 		csvLine.append(time).append("\n");
 		// Write result to file
 		try {
