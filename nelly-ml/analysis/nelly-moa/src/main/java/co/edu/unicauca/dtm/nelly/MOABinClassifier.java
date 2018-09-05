@@ -22,6 +22,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.StringTokenizer;
 
 import com.yahoo.labs.samoa.instances.Attribute;
 import com.yahoo.labs.samoa.instances.Instance;
@@ -113,6 +114,7 @@ public class MOABinClassifier {
 		options.put("--idxClass", 4);
 		options.put("--idxTrain", 5);
 		options.put("--pClass", 6);
+		options.put("--weights", 7);
 	}
 
 	/**
@@ -174,6 +176,17 @@ public class MOABinClassifier {
 		learnerOptions.put("iadem2", 50);
 		learnerOptions.put("iadem3", 51);
 	}
+	
+	/**
+	 * 
+	 */
+	private static final Map<String, Integer> weightOptions;
+	static {
+		weightOptions = new HashMap<String, Integer>();
+		weightOptions.put("default", 0);
+		weightOptions.put("constant", 1);
+		weightOptions.put("inverse", 2);
+	}
 
 	/**
 	 * Constructor
@@ -205,6 +218,9 @@ public class MOABinClassifier {
 		int indexClass = -1;
 		int indexTrain = -1;
 		String positiveClass = "E";
+		int weightOption = 0;
+		double positiveWeight = 1.0;
+		double negativeWeight = 1.0;
 		// Get parameters from arguments
 		for (int i = 0; i < args.length; i++) {
 			// Check that given option exists
@@ -212,7 +228,7 @@ public class MOABinClassifier {
 			if (MOABinClassifier.options.containsKey(args[i])) {
 				option = MOABinClassifier.options.get(args[i]);
 			} else {
-				System.out.println("Option " + args[i] + " does not exist");
+				System.out.println("Option '" + args[i] + "' does not exist");
 				MOABinClassifier.printHelp();
 				System.exit(1);
 			}
@@ -245,9 +261,9 @@ public class MOABinClassifier {
 				try {
 					indexClass = Integer.parseInt(args[i]);
 				} catch (Exception e) {
-					indexClass = -1;
-					System.out.println("Error parsing idxClass '" + args[i]
-							+ "' to integer. Using by default the SECOND-LAST column for classes.");
+					System.out.println("Error parsing idxClass '" + args[i] + "' to integer");
+					MOABinClassifier.printHelp();
+					System.exit(1);
 				}
 				break;
 			// INDEX TRAIN
@@ -257,9 +273,9 @@ public class MOABinClassifier {
 				try {
 					indexTrain = Integer.parseInt(args[i]);
 				} catch (Exception e) {
-					indexTrain = -1;
-					System.out.println("Error parsing idxTrain '" + args[i]
-							+ "' to integer. Using by default the LAST column as identifier of training instances.");
+					System.out.println("Error parsing idxTrain '" + args[i] + "' to integer");
+					MOABinClassifier.printHelp();
+					System.exit(1);
 				}
 				break;
 			// POSITIVE CLASS
@@ -267,14 +283,47 @@ public class MOABinClassifier {
 				i++;
 				positiveClass = args[i];
 				break;
+			// WEIGHTS
+			case 7:
+				i++;
+				// Tokenize weight option argument
+				StringTokenizer st = new StringTokenizer(args[i], ",");
+				// Check that given weight option exists
+				String weightArg = st.nextToken();
+				if (MOABinClassifier.weightOptions.containsKey(weightArg)) {
+					weightOption = MOABinClassifier.weightOptions.get(weightArg);
+					// Check if weight option is not the default
+					if (weightOption != 0) {
+						// Check that 2 parameters were given with the weight option
+						if (st.countTokens() != 2) {
+							System.out.println("Weight option '" + weightArg + "' requires two (2) numeric parameters separated by comma (e.g., " + weightArg + ",1,1)");
+							MOABinClassifier.printHelp();
+							System.exit(1);
+						}
+						String pWeight = st.nextToken();
+						String nWeight = st.nextToken();
+						try {
+							positiveWeight = Double.parseDouble(pWeight);
+							negativeWeight = Double.parseDouble(nWeight);
+						} catch (Exception e) {
+							System.out.println("Error parsing weight parameters '" + pWeight + "' and '" + nWeight + "' to double");
+							MOABinClassifier.printHelp();
+							System.exit(1);
+						}
+					}
+				} else {
+					System.out.println("Weight option '" + weightArg + "' does not exist");
+					MOABinClassifier.printHelp();
+					System.exit(1);
+				}
+				break;
 			// ERROR
 			default:
-				System.err.println("Internal error. Option " + option + " is not implemented");
+				System.err.println("Internal error. Option '" + option + "' is not implemented");
 				System.exit(1);
 				break;
 			}
 		}
-		System.out.println("----");
 		// Check if ARFF path exists
 		if (!new File(arffPath).exists()) {
 			System.out.println("File path '" + arffPath + "' does not exist");
@@ -295,7 +344,7 @@ public class MOABinClassifier {
 		int idxPositive = classAtt.indexOfValue(positiveClass);
 		// Run
 		MOABinClassifier classifier = new MOABinClassifier(outPath);
-		classifier.run(stream, learner, indexTrain, idxPositive);
+		classifier.run(stream, learner, indexTrain, idxPositive, weightOption, positiveWeight, negativeWeight);
 		// Close output writer
 		classifier.closeOutputWriter();
 	}
@@ -487,7 +536,7 @@ public class MOABinClassifier {
 	 * @param indexTrain
 	 * @param positiveClass
 	 */
-	private void run(ArffFileStream stream, Classifier learner, int indexTrain, int positiveClass) {
+	private void run(ArffFileStream stream, Classifier learner, int indexTrain, int positiveClass, int weightOption, double positiveWeight, double negativeWeight) {
 		// Check if default index train (last column)
 		InstancesHeader ih = stream.getHeader();
 		if (indexTrain == -1) {
@@ -564,20 +613,26 @@ public class MOABinClassifier {
 						falsePositives, falseNegatives, predictionTime);
 			} else if (train.equalsIgnoreCase(MOAUtilities.TRAINING_INSTANCE)) {
 				
-				double weight = 0.0;
-				if (actualClass == positiveClass) {
-					trainPositives++;
-					weight = 1.0 - (1.0 * trainPositives / (trainPositives + trainNegatives));
-//					System.out.println("Training positive");
-				} else {
-					trainNegatives++;
-					weight = 1.0 - (1.0 * trainNegatives / (trainPositives + trainNegatives));
-//					System.out.println("Training negative");
+				double weight = 1.0;
+				// Check if setting constant weights
+				if (weightOption == 1) {
+					if (actualClass == positiveClass)
+						weight = positiveWeight;
+					else
+						weight = negativeWeight;
 				}
-				// ADD OPTION FOR USING WEIGHTS (--weights default|inverse|constant)
+				// Check if setting weights inversely proportional to the number of instances
+				else if (weightOption == 2) {
+					if (actualClass == positiveClass) {
+						trainPositives++;
+						weight = positiveWeight - (positiveWeight * trainPositives / (trainPositives + trainNegatives));
+					} else {
+						trainNegatives++;
+						weight = negativeWeight - (negativeWeight * trainNegatives / (trainPositives + trainNegatives));
+					}
+				}
+				// Set weight
 				instance.setWeight(weight);
-//				System.out.println(weight);
-				
 				// Train on instance
 				learner.trainOnInstance(instance);
 				countTrainSamples++;
@@ -605,6 +660,7 @@ public class MOABinClassifier {
 				precision, npv, recall, specificity, fallOut, missRate, totalTime);
 		// Generate report statistics
 		StringBuilder report = new StringBuilder();
+		report.append("\n");
 		report.append("======================\n");
 		report.append("     FINAL REPORT     \n");
 		report.append("======================\n");
