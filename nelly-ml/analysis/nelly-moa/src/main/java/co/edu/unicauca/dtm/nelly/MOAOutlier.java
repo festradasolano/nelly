@@ -66,8 +66,7 @@ public class MOAOutlier {
 		options.put("--out", 2);
 		options.put("--learner", 3);
 		options.put("--idxClass", 4);
-		options.put("--idxTrain", 5);
-		options.put("--normClass", 6);
+		options.put("--pClass", 5);
 	}
 
 	/**
@@ -83,6 +82,11 @@ public class MOAOutlier {
 		learnerOptions.put("mcod", 4);
 		learnerOptions.put("simplecod", 5);
 	}
+	
+	/**
+	 * 
+	 */
+	private static final boolean NO_TRAIN_COLUMN = false;
 
 	/**
 	 * Constructor
@@ -111,8 +115,7 @@ public class MOAOutlier {
 		String outPath = System.getProperty("user.home") + File.separator + "out.csv";
 		String learnerName = "mcod";
 		int indexClass = -1;
-		int indexTrain = -1;
-		String normalClass = "M";
+		String positiveClass = "E";
 		// Get parameters from arguments
 		for (int i = 0; i < args.length; i++) {
 			// Check that given option exists
@@ -153,27 +156,15 @@ public class MOAOutlier {
 				try {
 					indexClass = Integer.parseInt(args[i]);
 				} catch (Exception e) {
-					indexClass = -1;
-					System.out.println("Error parsing idxClass '" + args[i]
-							+ "' to integer. Using by default the SECOND-LAST column for classes.");
+					System.out.println("Error parsing idxClass '" + args[i] + "' to integer");
+					MOAOutlier.printHelp();
+					System.exit(1);
 				}
 				break;
-			// INDEX TRAIN
-			case 5:
-				i++;
-				// Parse index of the column that identifies training instances
-				try {
-					indexTrain = Integer.parseInt(args[i]);
-				} catch (Exception e) {
-					indexTrain = -1;
-					System.out.println("Error parsing idxTrain '" + args[i]
-							+ "' to integer. Using by default the LAST column as identifier of training instances.");
-				}
-				break;
-			// NORMAL CLASS
+			// POSITIVE CLASS
 			case 6:
 				i++;
-				normalClass = args[i];
+				positiveClass = args[i];
 				break;
 			// ERROR
 			default:
@@ -182,7 +173,6 @@ public class MOAOutlier {
 				break;
 			}
 		}
-		System.out.println("----");
 		// Check if ARFF path exists
 		if (!new File(arffPath).exists()) {
 			System.out.println("File path '" + arffPath + "' does not exist");
@@ -190,9 +180,19 @@ public class MOAOutlier {
 		}
 		// Get learning algorithm
 		MyBaseOutlierDetector learner = MOAOutlier.getLearner(learnerName);
+		// Get ARFF file stream
+		ArffFileStream stream = MOAUtilities.readStream(arffPath, indexClass, NO_TRAIN_COLUMN);
+		// Check that positive class exist
+		Attribute classAtt = stream.getHeader().classAttribute();
+		if (!classAtt.getAttributeValues().contains(positiveClass)) {
+			System.out.println("Class value '" + positiveClass + "' does not exist. The set of class values is " + classAtt.getAttributeValues());
+			System.exit(1);
+		}
+		// Get index of positive class
+		int idxPositive = classAtt.indexOfValue(positiveClass);
 		// Run
 		MOAOutlier outlier = new MOAOutlier(outPath);
-		outlier.run(MOAUtilities.readStream(arffPath, indexClass), learner, indexTrain, normalClass);
+		outlier.run(stream, learner, idxPositive);
 		// Close output writer
 		outlier.closeOutputWriter();
 	}
@@ -288,24 +288,9 @@ public class MOAOutlier {
 	 * @param indexTrain
 	 * @return
 	 */
-	private void run(ArffFileStream stream, MyBaseOutlierDetector learner, int indexTrain, String normalClass) {
-		// Check if default index train (last column)
-		InstancesHeader ih = stream.getHeader();
-		if (indexTrain == -1) {
-			indexTrain = ih.numAttributes() - 1;
-		}
-		// Get index of normal class
-		int idxNormalClass = ih.classAttribute().indexOfValue(normalClass);
-		
-		// FIXME delete
-		System.out.println("Index normal class = " + idxNormalClass);
-		
-		// Get class and train attributes
-		Attribute trainAtt = ih.attribute(indexTrain);
-		// Set actual header to learner
-		ih.deleteAttributeAt(indexTrain);
-		InstancesHeader actualHeader = new InstancesHeader(ih);
-		learner.setModelContext(actualHeader);
+	private void run(ArffFileStream stream, MyBaseOutlierDetector learner, int positiveClass) {
+		// Set header to learner
+		learner.setModelContext(stream.getHeader());
 		// Prepare for running
 		stream.prepareForUse();
 		learner.prepareForUse();
