@@ -43,6 +43,16 @@ public class MOAUtilities {
 	public static final String TRAINING_INSTANCE = "T";
 	
 	/**
+	 * 
+	 */
+	private static final int DEFAULT_INDEX_CLASS = -1;
+	
+	/**
+	 * 
+	 */
+	private static final boolean HAS_TRAIN = true;
+	
+	/**
 	 * Creates a file. Exits if the program throws an error while creating the file
 	 * 
 	 * @param file
@@ -104,7 +114,6 @@ public class MOAUtilities {
 				MOAUtilities.createFile(file);
 			}
 		}
-		System.out.println("----");
 		return file;
 	}
 
@@ -114,11 +123,27 @@ public class MOAUtilities {
 	 * @return
 	 */
 	public static ArffFileStream readStream(String arffPath, int indexClass) {
+		return readStream(arffPath, indexClass, HAS_TRAIN);
+	}
+	
+	/**
+	 * @param arffPath
+	 * @param indexClass
+	 * @param indexTrain
+	 * @return
+	 */
+	public static ArffFileStream readStream(String arffPath, int indexClass, boolean hasTrain) {
 		// Read ARFF file
 		ArffFileStream stream = new ArffFileStream(arffPath, indexClass);
-		// Check if default index class (last-second column)
-		if (indexClass == -1) {
-			indexClass = stream.getHeader().numAttributes() - 1;
+		// Check if default index class
+		if (indexClass == DEFAULT_INDEX_CLASS) {
+			// Set index class to last column
+			indexClass = stream.getHeader().numAttributes();
+			// Check if stream has train column
+			if (hasTrain) {
+				// Set index class to last-second column
+				indexClass--;
+			}
 			stream.classIndexOption.setValue(indexClass);
 			stream.restart();
 		}
