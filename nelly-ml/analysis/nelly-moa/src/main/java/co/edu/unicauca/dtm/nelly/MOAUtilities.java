@@ -104,7 +104,6 @@ public class MOAUtilities {
 				MOAUtilities.createFile(file);
 			}
 		}
-		System.out.println("----");
 		return file;
 	}
 
