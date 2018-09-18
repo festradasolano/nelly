@@ -322,14 +322,16 @@ public class MOABinClassifier {
 				break;
 			// ERROR
 			default:
-				System.err.println("Internal error. Option '" + option + "' is not implemented");
-				System.exit(1);
+				System.err.println(
+						"Internal error. Option '" + option + "' is not implemented. Please, contact the developer");
+				System.exit(2);
 				break;
 			}
 		}
 		// Check if ARFF path exists
 		if (!new File(arffPath).exists()) {
 			System.out.println("File path '" + arffPath + "' does not exist");
+			MOABinClassifier.printHelp();
 			System.exit(1);
 		}
 		// Get learning algorithm
@@ -340,10 +342,12 @@ public class MOABinClassifier {
 		Attribute classAtt = stream.getHeader().classAttribute();
 		if (classAtt.getAttributeValues() == null) {
 			System.out.println("Class value '" + positiveClass + "' does not exist. The set of class values is NULL");
+			MOABinClassifier.printHelp();
 			System.exit(1);
 		} else if (!classAtt.getAttributeValues().contains(positiveClass)) {
 			System.out.println("Class value '" + positiveClass + "' does not exist. The set of class values is "
 					+ classAtt.getAttributeValues());
+			MOABinClassifier.printHelp();
 			System.exit(1);
 		}
 		// Get index of positive class
@@ -360,9 +364,9 @@ public class MOABinClassifier {
 	 */
 	private static void printHelp() {
 		System.out.println("");
-		System.out.println("=========");
-		System.out.println("NELLY-MOA");
-		System.out.println("=========");
+		System.out.println("=============================");
+		System.out.println("NELLY - MOA Binary Classifier");
+		System.out.println("=============================");
 		System.out.println("Options:");
 		System.out.println("  --help\tDisplay this help");
 		System.out.println("  --arff\tFile that contains ...");
@@ -491,7 +495,8 @@ public class MOABinClassifier {
 		case 51:
 			return new Iadem3();
 		default:
-			System.err.println("Internal error. Learner " + learnerOption + " is not implemented");
+			System.err.println(
+					"Internal error. Learner " + learnerOption + " is not implemented. Please, contact the developer");
 			System.exit(1);
 		}
 		return null;
@@ -506,8 +511,9 @@ public class MOABinClassifier {
 			this.output = new FileOutputStream(outFile);
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
-			System.err.println("Internal error. File '" + outFile.getAbsolutePath() + "' does not exist");
-			System.exit(1);
+			System.err.println("Internal error. File '" + outFile.getAbsolutePath()
+					+ "' does not exist. Please, contact the developer");
+			System.exit(2);
 		}
 	}
 
@@ -531,8 +537,9 @@ public class MOABinClassifier {
 			this.output.write(csvHeader.toString().getBytes());
 		} catch (IOException e) {
 			e.printStackTrace();
-			System.err.println("Internal error. Exception thrown when writing on the file");
-			System.exit(1);
+			System.err.println(
+					"Internal error. Exception thrown when writing on the file. Please, contact the developer");
+			System.exit(2);
 		}
 	}
 
@@ -735,8 +742,9 @@ public class MOABinClassifier {
 			this.output.flush();
 		} catch (IOException e) {
 			e.printStackTrace();
-			System.err.println("Internal error. Exception thrown when writing on the file");
-			System.exit(1);
+			System.err.println(
+					"Internal error. Exception thrown when writing on the file. Please, contact the developer");
+			System.exit(2);
 		}
 	}
 
@@ -748,8 +756,9 @@ public class MOABinClassifier {
 			this.output.close();
 		} catch (IOException e) {
 			e.printStackTrace();
-			System.err.println("Internal error. Exception thrown when closing the file writer");
-			System.exit(1);
+			System.err.println(
+					"Internal error. Exception thrown when closing the file writer. Please, contact the developer");
+			System.exit(2);
 		}
 	}
 
