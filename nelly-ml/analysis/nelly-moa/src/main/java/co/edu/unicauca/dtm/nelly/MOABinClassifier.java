@@ -176,7 +176,7 @@ public class MOABinClassifier {
 		learnerOptions.put("iadem2", 50);
 		learnerOptions.put("iadem3", 51);
 	}
-	
+
 	/**
 	 * 
 	 */
@@ -296,7 +296,9 @@ public class MOABinClassifier {
 					if (weightOption != 0) {
 						// Check that 2 parameters were given with the weight option
 						if (st.countTokens() != 2) {
-							System.out.println("Weight option '" + weightArg + "' requires two (2) numeric parameters separated by comma (e.g., " + weightArg + ",1,1)");
+							System.out.println("Weight option '" + weightArg
+									+ "' requires two (2) numeric parameters separated by comma (e.g., " + weightArg
+									+ ",1,1)");
 							MOABinClassifier.printHelp();
 							System.exit(1);
 						}
@@ -306,7 +308,8 @@ public class MOABinClassifier {
 							positiveWeight = Double.parseDouble(pWeight);
 							negativeWeight = Double.parseDouble(nWeight);
 						} catch (Exception e) {
-							System.out.println("Error parsing weight parameters '" + pWeight + "' and '" + nWeight + "' to double");
+							System.out.println("Error parsing weight parameters '" + pWeight + "' and '" + nWeight
+									+ "' to double");
 							MOABinClassifier.printHelp();
 							System.exit(1);
 						}
@@ -333,9 +336,12 @@ public class MOABinClassifier {
 		Classifier learner = MOABinClassifier.getLearner(learnerName);
 		// Get ARFF file stream
 		ArffFileStream stream = MOAUtilities.readStream(arffPath, indexClass);
-		// Check that positive class exist
+		// Check that positive class exists
 		Attribute classAtt = stream.getHeader().classAttribute();
-		if (!classAtt.getAttributeValues().contains(positiveClass)) {
+		if (classAtt.getAttributeValues() == null) {
+			System.out.println("Class value '" + positiveClass + "' does not exist. The set of class values is NULL");
+			System.exit(1);
+		} else if (!classAtt.getAttributeValues().contains(positiveClass)) {
 			System.out.println("Class value '" + positiveClass + "' does not exist. The set of class values is "
 					+ classAtt.getAttributeValues());
 			System.exit(1);
@@ -536,7 +542,8 @@ public class MOABinClassifier {
 	 * @param indexTrain
 	 * @param positiveClass
 	 */
-	private void run(ArffFileStream stream, Classifier learner, int indexTrain, int positiveClass, int weightOption, double positiveWeight, double negativeWeight) {
+	private void run(ArffFileStream stream, Classifier learner, int indexTrain, int positiveClass, int weightOption,
+			double positiveWeight, double negativeWeight) {
 		// Check if default index train (last column)
 		InstancesHeader ih = stream.getHeader();
 		if (indexTrain == -1) {
@@ -552,7 +559,10 @@ public class MOABinClassifier {
 		// Prepare for running
 		stream.prepareForUse();
 		learner.prepareForUse();
-		// Initialize counters
+		// Set header again to avoid null pointer exception of some algorithms (e.g.,
+		// SAM-kNN)
+		learner.setModelContext(actualHeader);
+		// Counters for accuracy metrics
 		int actualPositives = 0;
 		int actualNegatives = 0;
 		int truePositives = 0;
@@ -562,15 +572,13 @@ public class MOABinClassifier {
 		int countTrainSamples = 0;
 		int countTestSamples = 0;
 		int countErrorSamples = 0;
-		
+		// Counters for inversely proportional weights
 		int trainPositives = 0;
 		int trainNegatives = 0;
-		
 		// Get starting CPU time
 		boolean precise = TimingUtils.enablePreciseTiming();
 		long startTotalTime = TimingUtils.getNanoCPUTimeOfCurrentThread();
 		// Go through each instance
-//		 for (int i = 0; i < 1000; i++) {
 		while (stream.hasMoreInstances()) {
 			// Get instance data
 			Instance instance = stream.nextInstance().getData();
@@ -612,7 +620,7 @@ public class MOABinClassifier {
 						classAtt.value(actualClass), actualPositives, actualNegatives, truePositives, trueNegatives,
 						falsePositives, falseNegatives, predictionTime);
 			} else if (train.equalsIgnoreCase(MOAUtilities.TRAINING_INSTANCE)) {
-				
+				// Default weight
 				double weight = 1.0;
 				// Check if setting constant weights
 				if (weightOption == 1) {
