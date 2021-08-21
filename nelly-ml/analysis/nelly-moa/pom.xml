@@ -1,8 +1,267 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>co.edu.unicauca.dtm</groupId>
-  <artifactId>nelly-moa</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
-  <name>nelly-moa</name>
-  <description>Analysis of MOA algorithms for implementing NELLY</description>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>co.edu.unicauca.dtm</groupId>
+	<artifactId>nelly-moa</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+
+	<name>nelly-moa</name>
+	<description>Analysis of MOA regression algorithms for implementing NELLY</description>
+
+	<organization>
+		<name>University of Cauca, Popayan, Colombia</name>
+		<url>http://www.unicauca.edu.co/</url>
+	</organization>
+	<licenses>
+		<license>
+			<name>GNU General Public License 3.0</name>
+			<url>http://www.gnu.org/licenses/gpl-3.0.txt</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<id>festradasolano</id>
+			<name>Felipe Estrada-Solano</name>
+			<email>festradasolano@unicauca.edu.co</email>
+		</developer>
+	</developers>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.github.waikato</groupId>
+			<artifactId>jclasslocator</artifactId>
+			<version>0.0.12</version>
+		</dependency>
+
+		<dependency>
+			<groupId>nz.ac.waikato.cms.moa</groupId>
+			<artifactId>moa</artifactId>
+			<version>2018.6.0</version>
+		</dependency>
+		<dependency>
+			<groupId>nz.ac.waikato.cms.weka</groupId>
+			<artifactId>weka-dev</artifactId>
+			<version>3.9.2</version>
+		</dependency>
+
+		<dependency>
+			<groupId>nz.ac.waikato.cms.weka.thirdparty</groupId>
+			<artifactId>bounce</artifactId>
+			<version>0.18</version>
+		</dependency>
+		<dependency>
+			<groupId>nz.ac.waikato.cms.weka.thirdparty</groupId>
+			<artifactId>java-cup-11b</artifactId>
+			<version>2015.03.26</version>
+		</dependency>
+		<dependency>
+			<groupId>nz.ac.waikato.cms.weka.thirdparty</groupId>
+			<artifactId>java-cup-11b-runtime</artifactId>
+			<version>2015.03.26</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>core</artifactId>
+			<version>1.1</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>native_ref-java</artifactId>
+			<version>1.1</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>native_system-java</artifactId>
+			<version>1.1</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>netlib-native_ref-linux-i686</artifactId>
+			<version>1.1</version>
+			<classifier>natives</classifier>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>netlib-native_ref-linux-x86_64</artifactId>
+			<version>1.1</version>
+			<classifier>natives</classifier>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>netlib-native_ref-osx-x86_64</artifactId>
+			<version>1.1</version>
+			<classifier>natives</classifier>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>netlib-native_ref-win-i686</artifactId>
+			<version>1.1</version>
+			<classifier>natives</classifier>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil.netlib</groupId>
+			<artifactId>netlib-native_ref-win-x86_64</artifactId>
+			<version>1.1</version>
+			<classifier>natives</classifier>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fommil</groupId>
+			<artifactId>jniloader</artifactId>
+			<version>1.1</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.github.fracpete</groupId>
+			<artifactId>jclipboardhelper</artifactId>
+			<version>0.1.1</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fracpete</groupId>
+			<artifactId>jfilechooser-bookmarks</artifactId>
+			<version>0.1.6</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fracpete</groupId>
+			<artifactId>multisearch-weka-package</artifactId>
+			<version>2017.10.1</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.fracpete</groupId>
+			<artifactId>sizeofag</artifactId>
+			<version>1.0.4</version>
+		</dependency>
+
+		<dependency>
+			<groupId>net.sourceforge.f2j</groupId>
+			<artifactId>arpack_combined_all</artifactId>
+			<version>0.1</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.kramerlab</groupId>
+			<artifactId>autoencoder</artifactId>
+			<version>0.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.kramerlab</groupId>
+			<artifactId>bmad</artifactId>
+			<version>2.4</version>
+		</dependency>
+
+		<dependency>
+			<groupId>classworlds</groupId>
+			<artifactId>classworlds</artifactId>
+			<version>1.1-alpha-2</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-math3</artifactId>
+			<version>3.5</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.maven.doxia</groupId>
+			<artifactId>doxia-sink-api</artifactId>
+			<version>1.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.googlecode.efficient-java-matrix-library</groupId>
+			<artifactId>ejml</artifactId>
+			<version>0.22</version>
+		</dependency>
+
+		<dependency>
+			<groupId>gov.nist.math</groupId>
+			<artifactId>jama</artifactId>
+			<version>1.0.3</version>
+		</dependency>
+
+		<dependency>
+			<groupId>jfree</groupId>
+			<artifactId>jcommon</artifactId>
+			<version>1.0.16</version>
+		</dependency>
+		<dependency>
+			<groupId>jfree</groupId>
+			<artifactId>jfreechart</artifactId>
+			<version>1.0.13</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.jidesoft</groupId>
+			<artifactId>jide-oss</artifactId>
+			<version>3.6.18</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.markdownj</groupId>
+			<artifactId>markdownj-core</artifactId>
+			<version>0.4</version>
+		</dependency>
+
+		<dependency>
+			<groupId>net.sf.meka</groupId>
+			<artifactId>meka</artifactId>
+			<version>1.9.2</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.googlecode.matrix-toolkits-java</groupId>
+			<artifactId>mtj</artifactId>
+			<version>1.0.4</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.googlecode.netlib-java</groupId>
+			<artifactId>netlib-java</artifactId>
+			<version>1.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.codehaus.plexus</groupId>
+			<artifactId>plexus-container-default</artifactId>
+			<version>1.0-alpha-9-stable-1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.codehaus.plexus</groupId>
+			<artifactId>plexus-utils</artifactId>
+			<version>3.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.scala-lang</groupId>
+			<artifactId>scala-library</artifactId>
+			<version>2.10.2</version>
+		</dependency>
+		<dependency>
+			<groupId>org.scala-lang</groupId>
+			<artifactId>scala-swing</artifactId>
+			<version>2.10.2</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.scalatest</groupId>
+			<artifactId>scalatest-maven-plugin</artifactId>
+			<version>1.0-M2</version>
+		</dependency>
+
+		<dependency>
+			<groupId>net.sf.trove4j</groupId>
+			<artifactId>trove4j</artifactId>
+			<version>3.0.3</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.maven.wagon</groupId>
+			<artifactId>wagon-provider-api</artifactId>
+			<version>1.0-beta-2</version>
+		</dependency>
+	</dependencies>
 </project>
